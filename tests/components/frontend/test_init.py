@@ -997,6 +997,9 @@ async def test_manifest_json(hass: HomeAssistant, mock_http_client: TestClient) 
 
     json = await resp.json()
     assert json["theme_color"] == DEFAULT_THEME_COLOR
+    assert json["name"] == "ABEDOME"
+    assert json["short_name"] == "ABEDOME"
+    assert "related_applications" not in json
 
     await hass.services.async_call(
         DOMAIN, "set_theme", {"name": "happy"}, blocking=True

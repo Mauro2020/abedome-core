@@ -14,6 +14,7 @@ from propcache.api import cached_property
 import voluptuous as vol
 from yarl import URL
 
+from homeassistant.brand import DISTRIBUTION_DISPLAY_NAME
 from homeassistant.components import onboarding, websocket_api
 from homeassistant.components.http import KEY_HASS, HomeAssistantView, StaticPathConfig
 from homeassistant.components.websocket_api import ERR_NOT_FOUND, ActiveConnection
@@ -230,15 +231,11 @@ MANIFEST_JSON = Manifest(
             }
         ],
         "lang": "en-US",
-        "name": "Home Assistant",
-        "short_name": "Home Assistant",
+        "name": DISTRIBUTION_DISPLAY_NAME,
+        "short_name": DISTRIBUTION_DISPLAY_NAME,
         "start_url": "/?homescreen=1",
         "id": "/?homescreen=1",
         "theme_color": DEFAULT_THEME_COLOR,
-        "prefer_related_applications": True,
-        "related_applications": [
-            {"platform": "play", "id": "io.homeassistant.companion.android"}
-        ],
     }
 )
 
