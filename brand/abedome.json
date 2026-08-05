@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "component": "core",
+  "brand": {
+    "company_name": "ABEDOME",
+    "display_name": "ABEDOME",
+    "distribution_name": "ABEDOME OS",
+    "locale_default": "it-IT",
+    "palette": {
+      "deep_black": "#0B0B0A",
+      "ivory": "#F4F2EE",
+      "signature_orange": "#FF7A00",
+      "graphite": "#6B6B70",
+      "dusty_lilac": "#A783B8",
+      "mauve": "#E488A3"
+    }
+  },
+  "assets": {
+    "canonical_kit": "ABEDOME Brand Asset Kit",
+    "status": "not-yet-imported",
+    "intended_repository_directory": "brand/assets",
+    "wordmark_dark": "png/logo/logo-horizontal-dark-2400.png",
+    "wordmark_light": "png/logo/logo-horizontal-light-2400.png",
+    "symbol_dark": "png/logo/symbol-dark-2048.png",
+    "web_icon": "png/web/icon-512.png",
+    "favicon": "png/web/favicon.ico",
+    "distribution_icon": "png/home-assistant/abedome-distribution-icon-512.png"
+  },
+  "upstream": {
+    "project": "Home Assistant Core",
+    "repository": "https://github.com/home-assistant/core",
+    "branch": "dev",
+    "relationship": "Independent downstream derivative; not affiliated with, endorsed by, or sponsored by Home Assistant."
+  },
+  "governance": {
+    "upstream_sync_requires_pull_request": true,
+    "release_approval_required": true,
+    "automatic_upstream_promotion": false
+  }
+}
