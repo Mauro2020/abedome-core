@@ -8,6 +8,7 @@ import sys
 import threading
 
 from .backup_restore import restore_backup
+from .brand import CLI_DESCRIPTION
 from .const import REQUIRED_PYTHON_VER, RESTART_EXIT_CODE, __version__
 
 FAULT_LOG_FILENAME = "home-assistant.log.fault"
@@ -80,7 +81,7 @@ def get_arguments() -> argparse.Namespace:
     from . import config as config_util  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(
-        description="Home Assistant: Observe, Control, Automate.",
+        description=CLI_DESCRIPTION,
         epilog=f"If restart is requested, exits with code {RESTART_EXIT_CODE}",
     )
     parser.add_argument("--version", action="version", version=__version__)
