@@ -26,11 +26,15 @@
     "favicon": "png/web/favicon.ico",
     "distribution_icon": "png/home-assistant/abedome-distribution-icon-512.png"
   },
+  "legal": {
+    "fork_notice": "ABEDOME is independent software developed as a modified fork of Home Assistant. ABEDOME is not affiliated with, associated with, authorized by, or otherwise officially connected with Nabu Casa or Home Assistant.",
+    "upstream_name_usage": "The Home Assistant name is used solely to describe the origin of the software."
+  },
   "upstream": {
     "project": "Home Assistant Core",
     "repository": "https://github.com/home-assistant/core",
     "branch": "dev",
-    "relationship": "Independent downstream derivative; not affiliated with, endorsed by, or sponsored by Home Assistant."
+    "relationship": "Independent modified fork; not affiliated with, associated with, authorized by, or otherwise officially connected with Nabu Casa or Home Assistant."
   },
   "governance": {
     "upstream_sync_requires_pull_request": true,

@@ -53,13 +53,17 @@ jobs:
               CLI_DESCRIPTION,
               DISTRIBUTION_DISPLAY_NAME,
               DISTRIBUTION_NAME,
+              FORK_NOTICE,
               UPSTREAM_PROJECT_NAME,
+              UPSTREAM_NAME_USAGE_NOTICE,
           )
 
           assert DISTRIBUTION_DISPLAY_NAME == "ABEDOME"
           assert DISTRIBUTION_NAME == "ABEDOME OS"
           assert UPSTREAM_PROJECT_NAME == "Home Assistant"
-          assert CLI_DESCRIPTION == "ABEDOME OS, powered by Home Assistant."
+          assert CLI_DESCRIPTION == "ABEDOME OS"
+          assert "not affiliated" in FORK_NOTICE
+          assert UPSTREAM_NAME_USAGE_NOTICE.startswith('"Home Assistant"')
           PY
 
       - name: Build Core distribution archives
