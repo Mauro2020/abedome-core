@@ -1,0 +1,74 @@
+name: Build ABEDOME Core
+run-name: "ABEDOME Core: ${{ github.ref_name }}"
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - abedome/develop
+    paths:
+      - ".github/workflows/build-abedome-core.yml"
+      - "homeassistant/brand.py"
+      - "homeassistant/__main__.py"
+      - "homeassistant/components/frontend/**"
+      - "tests/test_brand.py"
+      - "pyproject.toml"
+      - ".python-version"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Package and verify the ABEDOME core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out ABEDOME Core
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the supported Python version
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: ".python-version"
+          check-latest: true
+
+      - name: Install packaging tools
+        run: python -m pip install --upgrade pip build
+
+      - name: Compile the core source
+        run: python -m compileall -q homeassistant
+
+      - name: Verify ABEDOME distribution identity
+        run: |
+          python - <<'PY'
+          from homeassistant.brand import (
+              CLI_DESCRIPTION,
+              DISTRIBUTION_DISPLAY_NAME,
+              DISTRIBUTION_NAME,
+              UPSTREAM_PROJECT_NAME,
+          )
+
+          assert DISTRIBUTION_DISPLAY_NAME == "ABEDOME"
+          assert DISTRIBUTION_NAME == "ABEDOME OS"
+          assert UPSTREAM_PROJECT_NAME == "Home Assistant"
+          assert CLI_DESCRIPTION == "ABEDOME OS, powered by Home Assistant."
+          PY
+
+      - name: Build Core distribution archives
+        run: python -m build
+
+      - name: Retain the Core distribution
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: abedome-core-distribution
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
