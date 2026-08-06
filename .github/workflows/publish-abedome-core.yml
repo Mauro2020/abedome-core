@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read # To check out the repository
-      packages: write # To publish the immutable image to GHCR
+      packages: write # To inspect and publish the immutable image in GHCR
     timeout-minutes: 60
     steps:
       - name: Check out ABEDOME Core
@@ -88,7 +88,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Refuse an existing immutable image tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_OWNER: ${{ github.repository_owner }}
+          GHCR_PACKAGE: abedome-core
+          GHCR_TAG: ${{ inputs.version }}
+        run: |
+          python3 script/abedome/check_ghcr_tag.py \
+            --owner "$GHCR_OWNER" \
+            --package "$GHCR_PACKAGE" \
+            --tag "$GHCR_TAG"
+
       - name: Build and publish the immutable ABEDOME Core image
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -101,19 +114,32 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Confirm the published image manifest
+      - name: Confirm the published image manifest and digest
         env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
           IMAGE: ${{ steps.image.outputs.name }}:${{ inputs.version }}
-        run: docker buildx imagetools inspect "$IMAGE"
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_DIGEST"
+          inspection="$(docker buildx imagetools inspect "$IMAGE")"
+          printf '%s\n' "$inspection"
+          actual_digest="$(printf '%s\n' "$inspection" | awk '$1 == "Digest:" {print $2; exit}')"
+          test -n "$actual_digest"
+          if [[ "$actual_digest" != "$EXPECTED_DIGEST" ]]; then
+            echo "::error::Published digest $actual_digest does not match build digest $EXPECTED_DIGEST"
+            exit 1
+          fi
 
       - name: Summarize the product artifact
         env:
+          DIGEST: ${{ steps.build.outputs.digest }}
           IMAGE: ${{ steps.image.outputs.name }}:${{ inputs.version }}
         run: |
           {
             echo "## ABEDOME Core development image"
             echo
             echo "- Image: \`$IMAGE\`"
+            echo "- Digest: \`$DIGEST\`"
             echo "- Architecture: \`linux/amd64\`"
             echo "- Frontend: \`abedome-frontend==2026.8.5.dev1\`"
             echo

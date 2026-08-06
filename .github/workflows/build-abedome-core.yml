@@ -17,7 +17,9 @@ on:
       - "homeassistant/package_constraints.txt"
       - "requirements.txt"
       - "requirements_all.txt"
+      - "script/abedome/check_ghcr_tag.py"
       - "script/hassfest/mdi_icons.py"
+      - "tests/scripts/abedome/test_check_ghcr_tag.py"
       - "tests/test_brand.py"
       - "tests/components/frontend/**"
       - "pyproject.toml"
@@ -47,8 +49,13 @@ jobs:
           python-version-file: ".python-version"
           check-latest: true
 
-      - name: Install packaging tools
-        run: python -m pip install --upgrade pip build
+      - name: Install build and test tools
+        run: python -m pip install --upgrade pip build pytest
+
+      - name: Test the immutable GHCR tag guard
+        run: >-
+          python -m pytest -q --confcutdir=tests/scripts/abedome
+          tests/scripts/abedome/test_check_ghcr_tag.py
 
       - name: Verify the published ABEDOME Frontend
         env:
