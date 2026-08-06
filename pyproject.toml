@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "homeassistant"
-version = "2026.9.0.dev0"
+version = "2026.9.0.dev1"
 license = "Apache-2.0"
 license-files = ["LICENSE*", "homeassistant/backports/LICENSE*"]
 description = "Open-source home automation platform running on Python 3."
@@ -23,6 +23,7 @@ classifiers = [
 ]
 requires-python = ">=3.14.2"
 dependencies = [
+  "abedome-frontend @ https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev1/abedome_frontend-2026.8.5.dev1-py3-none-any.whl#sha256=b43355e08a7b3781ec9c2e229dfe0079c14022e4eeb20331d99cdb74aab70e7f",
   "aiodns==4.0.4",
   # aiogithubapi is needed by frontend; frontend is unconditionally imported at
   # module level in `bootstrap.py` and its requirements thus need to be in

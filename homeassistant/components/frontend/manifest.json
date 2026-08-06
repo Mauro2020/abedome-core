@@ -1,7 +1,7 @@
 {
   "domain": "frontend",
-  "name": "Home Assistant Frontend",
-  "codeowners": ["@home-assistant/frontend"],
+  "name": "ABEDOME Frontend",
+  "codeowners": ["@Mauro2020"],
   "dependencies": [
     "api",
     "auth",
@@ -17,9 +17,9 @@
     "system_log",
     "websocket_api"
   ],
-  "documentation": "https://www.home-assistant.io/integrations/frontend",
+  "documentation": "https://github.com/Mauro2020/abedome-frontend",
   "integration_type": "system",
   "preview_features": { "winter_mode": {} },
   "quality_scale": "internal",
-  "requirements": ["home-assistant-frontend==20260729.5"]
+  "requirements": ["abedome-frontend==2026.8.5.dev1"]
 }

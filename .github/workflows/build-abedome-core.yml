@@ -9,10 +9,17 @@ on:
       - abedome/develop
     paths:
       - ".github/workflows/build-abedome-core.yml"
+      - ".github/workflows/publish-abedome-core.yml"
+      - "Dockerfile"
       - "homeassistant/brand.py"
       - "homeassistant/__main__.py"
       - "homeassistant/components/frontend/**"
+      - "homeassistant/package_constraints.txt"
+      - "requirements.txt"
+      - "requirements_all.txt"
+      - "script/hassfest/mdi_icons.py"
       - "tests/test_brand.py"
+      - "tests/components/frontend/**"
       - "pyproject.toml"
       - ".python-version"
 
@@ -42,6 +49,25 @@ jobs:
 
       - name: Install packaging tools
         run: python -m pip install --upgrade pip build
+
+      - name: Verify the published ABEDOME Frontend
+        env:
+          FRONTEND_SHA256: b43355e08a7b3781ec9c2e229dfe0079c14022e4eeb20331d99cdb74aab70e7f
+          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev1/abedome_frontend-2026.8.5.dev1-py3-none-any.whl
+          FRONTEND_VERSION: 2026.8.5.dev1
+        run: |
+          curl --fail --location --retry 3 --output /tmp/abedome-frontend.whl "$FRONTEND_URL"
+          echo "$FRONTEND_SHA256  /tmp/abedome-frontend.whl" | sha256sum --check
+          python -m pip install --no-deps /tmp/abedome-frontend.whl
+          python - <<'PY'
+          import os
+          from importlib.metadata import version
+
+          import hass_frontend
+
+          assert hass_frontend.where().is_dir()
+          assert version("abedome-frontend") == os.environ["FRONTEND_VERSION"]
+          PY
 
       - name: Compile the core source
         run: python -m compileall -q homeassistant
