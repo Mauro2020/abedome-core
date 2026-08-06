@@ -11,6 +11,8 @@ on:
         default: 2026.9.0.dev1
         type: string
 
+permissions: {}
+
 concurrency:
   group: publish-abedome-core-${{ inputs.version }}
   cancel-in-progress: false
