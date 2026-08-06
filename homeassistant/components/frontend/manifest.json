@@ -17,7 +17,7 @@
     "system_log",
     "websocket_api"
   ],
-  "documentation": "https://github.com/Mauro2020/abedome-frontend",
+  "documentation": "https://www.home-assistant.io/integrations/frontend",
   "integration_type": "system",
   "preview_features": { "winter_mode": {} },
   "quality_scale": "internal",

@@ -56,9 +56,9 @@ jobs:
           FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev1/abedome_frontend-2026.8.5.dev1-py3-none-any.whl
           FRONTEND_VERSION: 2026.8.5.dev1
         run: |
-          curl --fail --location --retry 3 --output /tmp/abedome-frontend.whl "$FRONTEND_URL"
-          echo "$FRONTEND_SHA256  /tmp/abedome-frontend.whl" | sha256sum --check
-          python -m pip install --no-deps /tmp/abedome-frontend.whl
+          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev1-py3-none-any.whl "$FRONTEND_URL"
+          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev1-py3-none-any.whl" | sha256sum --check
+          python -m pip install --no-deps /tmp/abedome_frontend-2026.8.5.dev1-py3-none-any.whl
           python - <<'PY'
           import os
           from importlib.metadata import version
