@@ -7,12 +7,13 @@ FROM ${BUILD_FROM}
 
 LABEL \
     io.hass.type="core" \
-    org.opencontainers.image.authors="The Home Assistant Authors" \
-    org.opencontainers.image.description="Open-source home automation platform running on Python 3" \
-    org.opencontainers.image.documentation="https://www.home-assistant.io/docs/" \
+    org.opencontainers.image.authors="ABEDOME contributors" \
+    org.opencontainers.image.description="Independent ABEDOME home automation Core distribution" \
+    org.opencontainers.image.documentation="https://github.com/Mauro2020/abedome-core" \
     org.opencontainers.image.licenses="Apache-2.0" \
-    org.opencontainers.image.title="Home Assistant" \
-    org.opencontainers.image.url="https://www.home-assistant.io/"
+    org.opencontainers.image.source="https://github.com/Mauro2020/abedome-core" \
+    org.opencontainers.image.title="ABEDOME Core" \
+    org.opencontainers.image.url="https://github.com/Mauro2020/abedome-core"
 
 # Synchronize with homeassistant/core.py:async_stop
 ENV \
@@ -39,12 +40,9 @@ RUN \
         --no-build \
         -r homeassistant/requirements.txt
 
-COPY requirements_all.txt home_assistant_frontend-* home_assistant_intents-* homeassistant/
+COPY requirements_all.txt homeassistant/
 RUN \
-    if ls homeassistant/home_assistant_*.whl 1> /dev/null 2>&1; then \
-        uv pip install homeassistant/home_assistant_*.whl; \
-    fi \
-    && uv pip install \
+    uv pip install \
         --no-build \
         -r homeassistant/requirements_all.txt
 

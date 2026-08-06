@@ -605,8 +605,8 @@ CLAUDE.md @home-assistant/core
 /tests/components/fritzbox/ @mib1185 @flabbamann
 /homeassistant/components/fronius/ @farmio
 /tests/components/fronius/ @farmio
-/homeassistant/components/frontend/ @home-assistant/frontend
-/tests/components/frontend/ @home-assistant/frontend
+/homeassistant/components/frontend/ @Mauro2020
+/tests/components/frontend/ @Mauro2020
 /homeassistant/components/frontier_silicon/ @wlcrs
 /tests/components/frontier_silicon/ @wlcrs
 /homeassistant/components/fuelprices_dk/ @MTrab

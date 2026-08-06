@@ -129,6 +129,9 @@ TwitterAPI==2.7.12
 # homeassistant.components.onvif
 WSDiscovery==2.1.2
 
+# homeassistant.components.frontend
+abedome-frontend==2026.8.5.dev1
+
 # homeassistant.components.accuweather
 accuweather==5.1.0
 
@@ -1279,9 +1282,6 @@ hole==0.9.2
 # homeassistant.components.holiday
 # homeassistant.components.workday
 holidays==0.101
-
-# homeassistant.components.frontend
-home-assistant-frontend==20260729.5
 
 # homeassistant.components.conversation
 home-assistant-intents==2026.7.30

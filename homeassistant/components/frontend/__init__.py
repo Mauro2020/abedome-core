@@ -63,6 +63,11 @@ DEV_ARTIFACTS_DIR = "development_artifacts"
 
 DEFAULT_THEME_COLOR = "#2980b9"
 
+FRONTEND_REQUIREMENT_PREFIXES = (
+    "abedome-frontend==",
+    "home-assistant-frontend==",
+)
+
 
 DATA_PANELS: HassKey[dict[str, Panel]] = HassKey("frontend_panels")
 DATA_EXTRA_MODULE_URL: HassKey[UrlManager] = HassKey("frontend_extra_module_url")
@@ -1035,8 +1040,12 @@ async def websocket_get_version(
     frontend = None
 
     for req in integration.requirements:
-        if req.startswith("home-assistant-frontend=="):
-            frontend = req.removeprefix("home-assistant-frontend==")
+        for prefix in FRONTEND_REQUIREMENT_PREFIXES:
+            if req.startswith(prefix):
+                frontend = req.removeprefix(prefix)
+                break
+        if frontend is not None:
+            break
 
     if frontend is None:
         connection.send_error(msg["id"], "unknown_version", "Version not found")

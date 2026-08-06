@@ -23,6 +23,7 @@ from homeassistant.components.frontend import (
     DEFAULT_THEME_COLOR,
     DOMAIN,
     EVENT_PANELS_UPDATED,
+    FRONTEND_REQUIREMENT_PREFIXES,
     THEMES_STORAGE_KEY,
     add_extra_js_url,
     async_panel_exists,
@@ -942,7 +943,7 @@ async def test_get_version(
     cur_version = next(
         req.split("==", 1)[1]
         for req in frontend.requirements
-        if req.startswith("home-assistant-frontend==")
+        if req.startswith(FRONTEND_REQUIREMENT_PREFIXES)
     )
 
     await ws_client.send_json({"id": 5, "type": "frontend/get_version"})

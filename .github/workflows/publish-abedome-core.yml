@@ -1,0 +1,122 @@
+name: Publish ABEDOME Core
+run-name: "Publish ABEDOME Core ${{ inputs.version }}"
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable ABEDOME Core development version
+        required: true
+        default: 2026.9.0.dev1
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: publish-abedome-core-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the x86-64 ABEDOME Core image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read # To check out the repository
+      packages: write # To publish the immutable image to GHCR
+    timeout-minutes: 60
+    steps:
+      - name: Check out ABEDOME Core
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate the immutable product versions
+        env:
+          EXPECTED_FRONTEND_SHA256: b43355e08a7b3781ec9c2e229dfe0079c14022e4eeb20331d99cdb74aab70e7f
+          EXPECTED_FRONTEND_VERSION: 2026.8.5.dev1
+          EXPECTED_CORE_VERSION: 2026.9.0.dev0
+          EXPECTED_IMAGE_VERSION: 2026.9.0.dev1
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+
+          expected_core_version = os.environ["EXPECTED_CORE_VERSION"]
+          expected_image_version = os.environ["EXPECTED_IMAGE_VERSION"]
+          requested_version = os.environ["REQUESTED_VERSION"]
+          assert requested_version == expected_image_version, (
+              f"Only {expected_image_version} may be published; received {requested_version}"
+          )
+
+          project = tomllib.loads(Path("pyproject.toml").read_text())
+          assert project["project"]["version"] == expected_core_version
+
+          frontend_version = os.environ["EXPECTED_FRONTEND_VERSION"]
+          frontend_sha256 = os.environ["EXPECTED_FRONTEND_SHA256"]
+          dependency = next(
+              requirement
+              for requirement in project["project"]["dependencies"]
+              if requirement.startswith("abedome-frontend @ ")
+          )
+          assert frontend_version in dependency
+          assert dependency.endswith(f"#sha256={frontend_sha256}")
+          PY
+
+      - name: Verify the published ABEDOME Frontend asset
+        env:
+          FRONTEND_SHA256: b43355e08a7b3781ec9c2e229dfe0079c14022e4eeb20331d99cdb74aab70e7f
+          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev1/abedome_frontend-2026.8.5.dev1-py3-none-any.whl
+        run: |
+          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev1-py3-none-any.whl "$FRONTEND_URL"
+          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev1-py3-none-any.whl" | sha256sum --check
+
+      - name: Derive the lowercase container image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/abedome-core" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v3.7.1
+
+      - name: Log in to the GitHub container registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish the immutable ABEDOME Core image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.name }}:${{ inputs.version }}
+          build-args: |
+            BUILD_FROM=ghcr.io/home-assistant/amd64-homeassistant-base:2026.07.0
+          provenance: true
+          sbom: true
+
+      - name: Confirm the published image manifest
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}:${{ inputs.version }}
+        run: docker buildx imagetools inspect "$IMAGE"
+
+      - name: Summarize the product artifact
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}:${{ inputs.version }}
+        run: |
+          {
+            echo "## ABEDOME Core development image"
+            echo
+            echo "- Image: \`$IMAGE\`"
+            echo "- Architecture: \`linux/amd64\`"
+            echo "- Frontend: \`abedome-frontend==2026.8.5.dev1\`"
+            echo
+            echo "This workflow publishes an immutable development image only."
+            echo "It does not modify the ABEDOME OS update feed."
+          } >> "$GITHUB_STEP_SUMMARY"

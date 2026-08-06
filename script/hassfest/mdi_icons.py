@@ -11,11 +11,13 @@ _TARGET = "pylint/plugins/pylint_home_assistant/generated/mdi_icons.py"
 
 
 def _get_frontend_version() -> str | None:
-    """Get the installed home-assistant-frontend version."""
-    try:
-        return version("home-assistant-frontend")
-    except PackageNotFoundError:
-        return None
+    """Get the installed ABEDOME-compatible frontend version."""
+    for package_name in ("abedome-frontend", "home-assistant-frontend"):
+        try:
+            return version(package_name)
+        except PackageNotFoundError:
+            continue
+    return None
 
 
 def _load_mdi_icons() -> set[str]:
@@ -39,7 +41,7 @@ def validate(integrations: dict[str, Integration], config: Config) -> None:
     if not icons:
         config.add_error(
             "mdi_icons",
-            "Could not load MDI icons from home-assistant-frontend",
+            "Could not load MDI icons from the ABEDOME frontend package",
         )
         return
 
