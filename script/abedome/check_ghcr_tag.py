@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import json
 import os
 import re
 import sys
-from collections.abc import Callable
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -78,7 +78,9 @@ def _read_page(
         raise GhcrTagCheckError("GitHub Packages returned invalid JSON") from err
 
     if not isinstance(payload, list):
-        raise GhcrTagCheckError("GitHub Packages returned an unexpected response schema")
+        raise GhcrTagCheckError(
+            "GitHub Packages returned an unexpected response schema"
+        )
     if len(payload) > PAGE_SIZE:
         raise GhcrTagCheckError("GitHub Packages returned an oversized page")
 
@@ -113,9 +115,7 @@ def tag_exists(
     )
 
     for page in range(1, MAX_PAGES + 1):
-        query = urlencode(
-            {"state": "active", "per_page": PAGE_SIZE, "page": page}
-        )
+        query = urlencode({"state": "active", "per_page": PAGE_SIZE, "page": page})
         versions = _read_page(
             url=f"{path}?{query}",
             token=token,
@@ -146,9 +146,7 @@ def tag_exists(
         if len(versions) < PAGE_SIZE:
             return False
 
-    raise GhcrTagCheckError(
-        f"GitHub Packages pagination exceeded {MAX_PAGES} pages"
-    )
+    raise GhcrTagCheckError(f"GitHub Packages pagination exceeded {MAX_PAGES} pages")
 
 
 def main() -> int:

@@ -49,11 +49,13 @@ jobs:
           python-version-file: ".python-version"
           check-latest: true
 
-      - name: Test the immutable GHCR tag guard
-        run: python -m unittest -v tests/scripts/abedome/test_check_ghcr_tag.py
+      - name: Install build and test tools
+        run: python -m pip install --upgrade pip build pytest
 
-      - name: Install packaging tools
-        run: python -m pip install --upgrade pip build
+      - name: Test the immutable GHCR tag guard
+        run: >-
+          python -m pytest -q --confcutdir=tests/scripts/abedome
+          tests/scripts/abedome/test_check_ghcr_tag.py
 
       - name: Verify the published ABEDOME Frontend
         env:
