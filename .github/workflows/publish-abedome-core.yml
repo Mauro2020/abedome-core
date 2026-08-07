@@ -8,13 +8,13 @@ on:
       version:
         description: Immutable ABEDOME Core development version
         required: true
-        default: 2026.9.0.dev2
+        default: 2026.9.0.dev3
         type: string
 
 permissions: {}
 
 concurrency:
-  group: publish-abedome-core-${{ inputs.version }}
+  group: publish-abedome-core
   cancel-in-progress: false
 
 jobs:
@@ -35,11 +35,12 @@ jobs:
         env:
           EXPECTED_FRONTEND_SHA256: b43355e08a7b3781ec9c2e229dfe0079c14022e4eeb20331d99cdb74aab70e7f
           EXPECTED_FRONTEND_VERSION: 2026.8.5.dev1
-          EXPECTED_CORE_VERSION: 2026.9.0.dev2
-          EXPECTED_IMAGE_VERSION: 2026.9.0.dev2
+          EXPECTED_CORE_VERSION: 2026.9.0.dev3
+          EXPECTED_IMAGE_VERSION: 2026.9.0.dev3
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           python3 - <<'PY'
+          import ast
           import os
           from pathlib import Path
           import tomllib
@@ -53,6 +54,23 @@ jobs:
 
           project = tomllib.loads(Path("pyproject.toml").read_text())
           assert project["project"]["version"] == expected_core_version
+
+          tree = ast.parse(Path("homeassistant/const.py").read_text())
+          values = {}
+          for node in tree.body:
+              if (
+                  isinstance(node, ast.AnnAssign)
+                  and isinstance(node.target, ast.Name)
+                  and isinstance(node.value, ast.Constant)
+              ):
+                  values[node.target.id] = node.value.value
+          const_version = (
+              f"{values['MAJOR_VERSION']}."
+              f"{values['MINOR_VERSION']}."
+              f"{values['PATCH_VERSION']}"
+          )
+          assert const_version == expected_core_version
+          assert expected_core_version == expected_image_version
 
           frontend_version = os.environ["EXPECTED_FRONTEND_VERSION"]
           frontend_sha256 = os.environ["EXPECTED_FRONTEND_SHA256"]
@@ -111,17 +129,23 @@ jobs:
           tags: ${{ steps.image.outputs.name }}:${{ inputs.version }}
           build-args: |
             BUILD_FROM=ghcr.io/home-assistant/amd64-homeassistant-base:2026.07.0
+            BUILD_VERSION=${{ inputs.version }}
+            BUILD_REVISION=${{ github.sha }}
           provenance: true
           sbom: true
 
-      - name: Confirm the published image manifest and digest
+      - name: Confirm immutable image digest and metadata
         env:
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
-          IMAGE: ${{ steps.image.outputs.name }}:${{ inputs.version }}
+          EXPECTED_REVISION: ${{ github.sha }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
         run: |
           set -euo pipefail
           test -n "$EXPECTED_DIGEST"
-          inspection="$(docker buildx imagetools inspect "$IMAGE")"
+          immutable_image="$IMAGE_NAME:$EXPECTED_VERSION"
+          immutable_ref="$IMAGE_NAME@$EXPECTED_DIGEST"
+          inspection="$(docker buildx imagetools inspect "$immutable_image")"
           printf '%s\n' "$inspection"
           actual_digest="$(printf '%s\n' "$inspection" | awk '$1 == "Digest:" {print $2; exit}')"
           test -n "$actual_digest"
@@ -130,19 +154,77 @@ jobs:
             exit 1
           fi
 
+          docker pull "$immutable_ref"
+          hass_version="$(docker inspect "$immutable_ref" --format '{{ index .Config.Labels "io.hass.version" }}')"
+          image_version="$(docker inspect "$immutable_ref" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          image_revision="$(docker inspect "$immutable_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          if [[ "$hass_version" != "$EXPECTED_VERSION" || "$image_version" != "$EXPECTED_VERSION" ]]; then
+            echo "::error::Immutable image version labels do not match $EXPECTED_VERSION"
+            exit 1
+          fi
+          if [[ "$image_revision" != "$EXPECTED_REVISION" ]]; then
+            echo "::error::Immutable image revision $image_revision does not match $EXPECTED_REVISION"
+            exit 1
+          fi
+
+      - name: Promote verified image to landing-page bootstrap alias
+        env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "$IMAGE_NAME:landingpage" \
+            "$IMAGE_NAME@$EXPECTED_DIGEST"
+
+      - name: Confirm landing-page alias digest and metadata
+        env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_REVISION: ${{ github.sha }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+        run: |
+          set -euo pipefail
+          alias_image="$IMAGE_NAME:landingpage"
+          inspection="$(docker buildx imagetools inspect "$alias_image")"
+          printf '%s\n' "$inspection"
+          actual_digest="$(printf '%s\n' "$inspection" | awk '$1 == "Digest:" {print $2; exit}')"
+          test -n "$actual_digest"
+          if [[ "$actual_digest" != "$EXPECTED_DIGEST" ]]; then
+            echo "::error::Bootstrap alias digest $actual_digest does not match verified digest $EXPECTED_DIGEST"
+            exit 1
+          fi
+
+          docker pull "$alias_image"
+          hass_version="$(docker inspect "$alias_image" --format '{{ index .Config.Labels "io.hass.version" }}')"
+          image_version="$(docker inspect "$alias_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          image_revision="$(docker inspect "$alias_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          if [[ "$hass_version" != "$EXPECTED_VERSION" || "$image_version" != "$EXPECTED_VERSION" ]]; then
+            echo "::error::Bootstrap alias version labels do not match $EXPECTED_VERSION"
+            exit 1
+          fi
+          if [[ "$image_revision" != "$EXPECTED_REVISION" ]]; then
+            echo "::error::Bootstrap alias revision $image_revision does not match $EXPECTED_REVISION"
+            exit 1
+          fi
+
       - name: Summarize the product artifact
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-          IMAGE: ${{ steps.image.outputs.name }}:${{ inputs.version }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          VERSION: ${{ inputs.version }}
         run: |
           {
             echo "## ABEDOME Core development image"
             echo
-            echo "- Image: \`$IMAGE\`"
+            echo "- Immutable image: \`$IMAGE_NAME:$VERSION\`"
+            echo "- Bootstrap alias: \`$IMAGE_NAME:landingpage\`"
             echo "- Digest: \`$DIGEST\`"
             echo "- Architecture: \`linux/amd64\`"
+            echo "- Core version: \`$VERSION\`"
+            echo "- Source revision: \`${{ github.sha }}\`"
             echo "- Frontend: \`abedome-frontend==2026.8.5.dev1\`"
             echo
-            echo "This workflow publishes an immutable development image only."
-            echo "It does not modify the ABEDOME OS update feed."
+            echo "The bootstrap alias points to the same verified digest as the immutable development image."
+            echo "This is a manual development publication; it does not modify stable, beta, or the ABEDOME OS update feed."
           } >> "$GITHUB_STEP_SUMMARY"
