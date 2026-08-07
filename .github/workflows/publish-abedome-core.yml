@@ -212,6 +212,7 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           IMAGE_NAME: ${{ steps.image.outputs.name }}
+          SOURCE_REVISION: ${{ github.sha }}
           VERSION: ${{ inputs.version }}
         run: |
           {
@@ -222,7 +223,7 @@ jobs:
             echo "- Digest: \`$DIGEST\`"
             echo "- Architecture: \`linux/amd64\`"
             echo "- Core version: \`$VERSION\`"
-            echo "- Source revision: \`${{ github.sha }}\`"
+            echo "- Source revision: \`$SOURCE_REVISION\`"
             echo "- Frontend: \`abedome-frontend==2026.8.5.dev1\`"
             echo
             echo "The bootstrap alias points to the same verified digest as the immutable development image."
