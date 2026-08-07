@@ -29,6 +29,7 @@ def _core_version() -> str:
 
 
 def test_project_core_and_image_metadata_use_next_version() -> None:
+    """Ensure Core and container metadata share the immutable version."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     dockerfile = (ROOT / "Dockerfile").read_text()
 
@@ -42,6 +43,7 @@ def test_project_core_and_image_metadata_use_next_version() -> None:
 
 
 def test_publisher_verifies_before_promoting_bootstrap_alias() -> None:
+    """Ensure publication verifies the image before moving the alias."""
     workflow = (ROOT / ".github/workflows/publish-abedome-core.yml").read_text()
 
     immutable_check = workflow.index(
