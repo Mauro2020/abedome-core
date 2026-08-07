@@ -11,6 +11,7 @@ on:
       - ".github/workflows/build-abedome-core.yml"
       - ".github/workflows/publish-abedome-core.yml"
       - "Dockerfile"
+      - "homeassistant/const.py"
       - "homeassistant/brand.py"
       - "homeassistant/__main__.py"
       - "homeassistant/components/frontend/**"
@@ -20,6 +21,7 @@ on:
       - "script/abedome/check_ghcr_tag.py"
       - "script/hassfest/mdi_icons.py"
       - "tests/scripts/abedome/test_check_ghcr_tag.py"
+      - "tests/scripts/abedome/test_publish_contract.py"
       - "tests/test_brand.py"
       - "tests/components/frontend/**"
       - "pyproject.toml"
@@ -52,10 +54,11 @@ jobs:
       - name: Install build and test tools
         run: python -m pip install --upgrade pip build pytest
 
-      - name: Test the immutable GHCR tag guard
+      - name: Test the Core publication contract
         run: >-
           python -m pytest -q --confcutdir=tests/scripts/abedome
           tests/scripts/abedome/test_check_ghcr_tag.py
+          tests/scripts/abedome/test_publish_contract.py
 
       - name: Verify the published ABEDOME Frontend
         env:

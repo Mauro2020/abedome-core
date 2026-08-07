@@ -5,15 +5,21 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
+ARG BUILD_VERSION
+ARG BUILD_REVISION
+
 LABEL \
     io.hass.type="core" \
+    io.hass.version="${BUILD_VERSION}" \
     org.opencontainers.image.authors="ABEDOME contributors" \
     org.opencontainers.image.description="Independent ABEDOME home automation Core distribution" \
     org.opencontainers.image.documentation="https://github.com/Mauro2020/abedome-core" \
     org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.revision="${BUILD_REVISION}" \
     org.opencontainers.image.source="https://github.com/Mauro2020/abedome-core" \
     org.opencontainers.image.title="ABEDOME Core" \
-    org.opencontainers.image.url="https://github.com/Mauro2020/abedome-core"
+    org.opencontainers.image.url="https://github.com/Mauro2020/abedome-core" \
+    org.opencontainers.image.version="${BUILD_VERSION}"
 
 # Synchronize with homeassistant/core.py:async_stop
 ENV \
