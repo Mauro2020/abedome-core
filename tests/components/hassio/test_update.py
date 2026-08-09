@@ -149,6 +149,46 @@ async def test_update_entities(
     assert state.attributes["auto_update"] is auto_update
 
 
+@pytest.mark.parametrize(
+    ("entity_id", "expected_title", "expected_release_url"),
+    [
+        (
+            "update.home_assistant_operating_system_update",
+            "ABEDOME OS",
+            "https://github.com/Mauro2020/abedome-os/commits/abedome/develop",
+        ),
+        (
+            "update.home_assistant_supervisor_update",
+            "ABEDOME Supervisor",
+            "https://github.com/Mauro2020/abedome-supervisor/commits/abedome/develop",
+        ),
+        (
+            "update.home_assistant_core_update",
+            "ABEDOME Core",
+            "https://github.com/Mauro2020/abedome-core/commits/abedome/develop",
+        ),
+    ],
+)
+async def test_abedome_system_update_identity(
+    hass: HomeAssistant,
+    entity_id: str,
+    expected_title: str,
+    expected_release_url: str,
+) -> None:
+    """Test ABEDOME system update identity."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
+    config_entry.add_to_hass(hass)
+
+    with patch.dict(os.environ, MOCK_ENVIRON):
+        assert await async_setup_component(hass, DOMAIN, {"hassio": {}})
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.attributes["title"] == expected_title
+    assert state.attributes["entity_picture"] == "/static/icons/favicon-192x192.png"
+    assert state.attributes["release_url"] == expected_release_url
+
+
 async def test_update_addon(hass: HomeAssistant, update_addon: AsyncMock) -> None:
     """Test updating addon update entity."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
@@ -1699,9 +1739,7 @@ async def test_update_os_with_error(
     await hass.async_block_till_done()
 
     supervisor_client.os.update.side_effect = SupervisorError
-    with pytest.raises(
-        HomeAssistantError, match=r"^Error updating Home Assistant Operating System:"
-    ):
+    with pytest.raises(HomeAssistantError, match=r"^Error updating ABEDOME OS:"):
         await hass.services.async_call(
             "update",
             "install",
@@ -1764,7 +1802,7 @@ async def test_update_supervisor_with_error(
 
     supervisor_client.supervisor.update.side_effect = SupervisorError
     with pytest.raises(
-        HomeAssistantError, match=r"^Error updating Home Assistant Supervisor:"
+        HomeAssistantError, match=r"^Error updating ABEDOME Supervisor:"
     ):
         await hass.services.async_call(
             "update",
@@ -1790,9 +1828,7 @@ async def test_update_core_with_error(
     await hass.async_block_till_done()
 
     supervisor_client.homeassistant.update.side_effect = SupervisorError
-    with pytest.raises(
-        HomeAssistantError, match=r"^Error updating Home Assistant Core:"
-    ):
+    with pytest.raises(HomeAssistantError, match=r"^Error updating ABEDOME Core:"):
         await hass.services.async_call(
             "update",
             "install",

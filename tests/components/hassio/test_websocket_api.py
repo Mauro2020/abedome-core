@@ -971,7 +971,7 @@ async def test_update_core_with_error(
     assert not result["success"]
     assert result["error"] == {
         "code": "home_assistant_error",
-        "message": "Error updating Home Assistant Core: ",
+        "message": "Error updating ABEDOME Core: ",
     }
 
 
