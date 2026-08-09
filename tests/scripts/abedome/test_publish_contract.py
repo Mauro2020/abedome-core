@@ -7,7 +7,7 @@ from pathlib import Path
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
-EXPECTED_VERSION = "2026.9.1.dev1"
+EXPECTED_VERSION = "2026.9.1.dev2"
 
 
 def _core_version() -> str:
