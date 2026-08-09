@@ -7,6 +7,7 @@ from aiohasupervisor.models import (
     StoreAddonUpdate,
 )
 
+from homeassistant.brand import CORE_NAME, DISTRIBUTION_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -56,7 +57,7 @@ async def update_core(hass: HomeAssistant, version: str | None, backup: bool) ->
             HomeAssistantUpdateOptions(version=version, backup=False)
         )
     except SupervisorError as err:
-        raise HomeAssistantError(f"Error updating Home Assistant Core: {err}") from err
+        raise HomeAssistantError(f"Error updating {CORE_NAME}: {err}") from err
 
 
 async def update_os(hass: HomeAssistant, version: str | None, backup: bool) -> None:
@@ -74,6 +75,4 @@ async def update_os(hass: HomeAssistant, version: str | None, backup: bool) -> N
     try:
         await client.os.update(OSUpdate(version=version))
     except SupervisorError as err:
-        raise HomeAssistantError(
-            f"Error updating Home Assistant Operating System: {err}"
-        ) from err
+        raise HomeAssistantError(f"Error updating {DISTRIBUTION_NAME}: {err}") from err
