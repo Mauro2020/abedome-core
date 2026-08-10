@@ -8,7 +8,7 @@ on:
       version:
         description: Immutable ABEDOME Core development version
         required: true
-        default: 2026.9.1.dev4
+        default: 2026.9.1.dev5
         type: string
 
 permissions: {}
@@ -33,10 +33,10 @@ jobs:
 
       - name: Validate the immutable product versions
         env:
-          EXPECTED_FRONTEND_SHA256: e13411e71544c9ff7c5b8beca4b7368ee96b0390842e3e26e221874f91f38d0e
-          EXPECTED_FRONTEND_VERSION: 2026.8.5.dev4
-          EXPECTED_CORE_VERSION: 2026.9.1.dev4
-          EXPECTED_IMAGE_VERSION: 2026.9.1.dev4
+          EXPECTED_FRONTEND_SHA256: ca552d9b04d4c517226844c0c4b32df19cec6fb1a306110e95a12c0c9886fe02
+          EXPECTED_FRONTEND_VERSION: 2026.8.5.dev5
+          EXPECTED_CORE_VERSION: 2026.9.1.dev5
+          EXPECTED_IMAGE_VERSION: 2026.9.1.dev5
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           python3 - <<'PY'
@@ -85,11 +85,11 @@ jobs:
 
       - name: Verify the published ABEDOME Frontend asset
         env:
-          FRONTEND_SHA256: e13411e71544c9ff7c5b8beca4b7368ee96b0390842e3e26e221874f91f38d0e
-          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev4/abedome_frontend-2026.8.5.dev4-py3-none-any.whl
+          FRONTEND_SHA256: ca552d9b04d4c517226844c0c4b32df19cec6fb1a306110e95a12c0c9886fe02
+          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev5/abedome_frontend-2026.8.5.dev5-py3-none-any.whl
         run: |
-          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev4-py3-none-any.whl "$FRONTEND_URL"
-          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev4-py3-none-any.whl" | sha256sum --check
+          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev5-py3-none-any.whl "$FRONTEND_URL"
+          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev5-py3-none-any.whl" | sha256sum --check
 
       - name: Derive the lowercase container image name
         id: image
@@ -224,7 +224,7 @@ jobs:
             echo "- Architecture: \`linux/amd64\`"
             echo "- Core version: \`$VERSION\`"
             echo "- Source revision: \`$SOURCE_REVISION\`"
-            echo "- Frontend: \`abedome-frontend==2026.8.5.dev4\`"
+            echo "- Frontend: \`abedome-frontend==2026.8.5.dev5\`"
             echo
             echo "The bootstrap alias points to the same verified digest as the immutable development image."
             echo "This is a manual development publication; it does not modify stable, beta, or the ABEDOME OS update feed."
