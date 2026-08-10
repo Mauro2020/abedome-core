@@ -7,10 +7,10 @@ from pathlib import Path
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
-EXPECTED_VERSION = "2026.9.1.dev3"
-EXPECTED_FRONTEND_VERSION = "2026.8.5.dev3"
+EXPECTED_VERSION = "2026.9.1.dev4"
+EXPECTED_FRONTEND_VERSION = "2026.8.5.dev4"
 EXPECTED_FRONTEND_SHA256 = (
-    "515cd2d281570eb19c7b50a8bc79c51aba5bbebc0093ef9b13faf1bb1b5d4964"
+    "e13411e71544c9ff7c5b8beca4b7368ee96b0390842e3e26e221874f91f38d0e"
 )
 
 
