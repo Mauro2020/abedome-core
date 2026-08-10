@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar, integration_platform
 from homeassistant.helpers.system_info import async_get_system_info
 from homeassistant.helpers.translation import async_get_translations
-from homeassistant.setup import async_setup_component, async_wait_component
+from homeassistant.setup import async_wait_component
 
 if TYPE_CHECKING:
     from . import OnboardingData, OnboardingStorage, OnboardingStoreData
@@ -28,7 +28,6 @@ if TYPE_CHECKING:
 from .const import (
     DEFAULT_AREAS,
     DOMAIN,
-    STEP_ANALYTICS,
     STEP_CORE_CONFIG,
     STEP_INTEGRATION,
     STEP_USER,
@@ -48,7 +47,6 @@ async def async_setup(
     hass.http.register_view(UserOnboardingView(data, store))
     hass.http.register_view(CoreConfigOnboardingView(data, store))
     hass.http.register_view(IntegrationOnboardingView(data, store))
-    hass.http.register_view(AnalyticsOnboardingView(data, store))
     hass.http.register_view(WaitIntegrationOnboardingView(data))
 
 
@@ -121,7 +119,7 @@ class InstallationTypeOnboardingView(NoAuthBaseOnboardingView):
 
     async def get(self, request: web.Request) -> web.Response:
         """Return the onboarding status."""
-        if self._data["done"]:
+        if any(step in self._data["done"] for step in STEPS):
             raise HTTPUnauthorized
 
         hass = request.app[KEY_HASS]
@@ -150,7 +148,7 @@ class _BaseOnboardingStepView(BaseOnboardingView):
         self._data["done"].append(self.step)
         await self._store.async_save(self._data)
 
-        if set(self._data["done"]) == set(STEPS):
+        if set(STEPS).issubset(self._data["done"]):
             data: OnboardingData = hass.data[DOMAIN]
             data.onboarded = True
             for listener in data.listeners:
@@ -259,12 +257,6 @@ class CoreConfigOnboardingView(_BaseOnboardingStepView):
                     f"onboarding_setup_{domain}",
                 )
 
-            if "analytics" not in hass.config.components:
-                # If by some chance that analytics has not finished
-                # setting up, wait for it here so its ready for the
-                # next step.
-                await async_setup_component(hass, "analytics", {})
-
             return self.json({})
 
 
@@ -339,28 +331,6 @@ class WaitIntegrationOnboardingView(NoAuthBaseOnboardingView):
                 "integration_loaded": await async_wait_component(hass, domain),
             }
         )
-
-
-class AnalyticsOnboardingView(_BaseOnboardingStepView):
-    """View to finish analytics onboarding step."""
-
-    url = "/api/onboarding/analytics"
-    name = "api:onboarding:analytics"
-    step = STEP_ANALYTICS
-
-    async def post(self, request: web.Request) -> web.Response:
-        """Handle finishing analytics step."""
-        hass = request.app[KEY_HASS]
-
-        async with self._lock:
-            if self._async_is_done():
-                return self.json_message(
-                    "Analytics config step already done", HTTPStatus.FORBIDDEN
-                )
-
-            await self._async_mark_done(hass)
-
-            return self.json({})
 
 
 @callback

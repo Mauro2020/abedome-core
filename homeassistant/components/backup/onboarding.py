@@ -15,6 +15,7 @@ from homeassistant.components.onboarding import (
     BaseOnboardingView,
     NoAuthBaseOnboardingView,
 )
+from homeassistant.components.onboarding.const import STEPS
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -54,7 +55,7 @@ def with_backup_manager[_ViewT: BaseOnboardingView, **_P](
         **kwargs: _P.kwargs,
     ) -> web.Response:
         """Check admin and call function."""
-        if self._data["done"]:
+        if any(step in self._data["done"] for step in STEPS):
             raise HTTPUnauthorized
 
         manager = async_get_manager(request.app[KEY_HASS])

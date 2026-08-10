@@ -17,7 +17,7 @@ STEP_CORE_CONFIG = "core_config"
 STEP_INTEGRATION = "integration"
 STEP_ANALYTICS = "analytics"
 
-STEPS = [STEP_USER, STEP_CORE_CONFIG, STEP_ANALYTICS, STEP_INTEGRATION]
+STEPS = [STEP_USER, STEP_CORE_CONFIG, STEP_INTEGRATION]
 
 DEFAULT_AREAS = (
     DefaultArea(key="living_room", icon="mdi:sofa"),

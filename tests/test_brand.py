@@ -12,6 +12,7 @@ from homeassistant.brand import (
     PRODUCT_ICON_URL,
     SUPERVISOR_NAME,
     SUPERVISOR_REPOSITORY_URL,
+    UPSTREAM_ANALYTICS_ENABLED,
     UPSTREAM_NAME_USAGE_NOTICE,
     UPSTREAM_PROJECT_NAME,
 )
@@ -24,6 +25,7 @@ def test_distribution_identity_preserves_upstream_attribution() -> None:
     assert CORE_NAME == "ABEDOME Core"
     assert SUPERVISOR_NAME == "ABEDOME Supervisor"
     assert UPSTREAM_PROJECT_NAME == "Home Assistant"
+    assert not UPSTREAM_ANALYTICS_ENABLED
     assert CLI_DESCRIPTION == "ABEDOME OS"
     assert PRODUCT_ICON_URL == "/static/icons/favicon-192x192.png"
     assert DEVELOPMENT_BRANCH == "abedome/develop"

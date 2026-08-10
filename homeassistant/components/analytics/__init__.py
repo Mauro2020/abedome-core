@@ -2,8 +2,10 @@
 
 from typing import Any
 
+from aiohasupervisor import SupervisorError
 import voluptuous as vol
 
+from homeassistant import brand
 from homeassistant.components import labs, websocket_api
 from homeassistant.components.hassio import HassioNotReadyError
 from homeassistant.config_entries import SOURCE_SYSTEM, ConfigEntry
@@ -63,7 +65,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     analytics_config = config.get(DOMAIN, {})
 
     snapshots_url: str | None = None
-    if CONF_SNAPSHOTS_URL in analytics_config:
+    if brand.UPSTREAM_ANALYTICS_ENABLED and CONF_SNAPSHOTS_URL in analytics_config:
         await labs.async_update_preview_feature(
             hass, DOMAIN, LABS_SNAPSHOT_FEATURE, enabled=True
         )
@@ -90,11 +92,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         await analytics.load()
-    except HassioNotReadyError as err:
+    except (HassioNotReadyError, SupervisorError) as err:
         raise ConfigEntryNotReady(
             translation_domain=DOMAIN,
             translation_key="supervisor_not_ready",
         ) from err
+
+    hass.data[DATA_COMPONENT] = analytics
+
+    if not brand.UPSTREAM_ANALYTICS_ENABLED:
+
+        async def _async_enforce_policy_at_started(hass: HomeAssistant) -> None:
+            """Re-enforce downstream privacy policy after startup."""
+            await analytics.async_schedule()
+
+        async_at_started(hass, _async_enforce_policy_at_started)
+        return True
 
     started = False
 
@@ -117,7 +130,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     async_at_started(hass, start_schedule)
 
-    hass.data[DATA_COMPONENT] = analytics
     return True
 
 
