@@ -62,13 +62,13 @@ jobs:
 
       - name: Verify the published ABEDOME Frontend
         env:
-          FRONTEND_SHA256: 515cd2d281570eb19c7b50a8bc79c51aba5bbebc0093ef9b13faf1bb1b5d4964
-          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev3/abedome_frontend-2026.8.5.dev3-py3-none-any.whl
-          FRONTEND_VERSION: 2026.8.5.dev3
+          FRONTEND_SHA256: e13411e71544c9ff7c5b8beca4b7368ee96b0390842e3e26e221874f91f38d0e
+          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev4/abedome_frontend-2026.8.5.dev4-py3-none-any.whl
+          FRONTEND_VERSION: 2026.8.5.dev4
         run: |
-          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev3-py3-none-any.whl "$FRONTEND_URL"
-          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev3-py3-none-any.whl" | sha256sum --check
-          python -m pip install --no-deps /tmp/abedome_frontend-2026.8.5.dev3-py3-none-any.whl
+          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev4-py3-none-any.whl "$FRONTEND_URL"
+          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev4-py3-none-any.whl" | sha256sum --check
+          python -m pip install --no-deps /tmp/abedome_frontend-2026.8.5.dev4-py3-none-any.whl
           python - <<'PY'
           import os
           from importlib.metadata import version
