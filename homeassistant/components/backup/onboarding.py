@@ -12,10 +12,10 @@ import voluptuous as vol
 from homeassistant.components.http import KEY_HASS
 from homeassistant.components.http.data_validator import RequestDataValidator
 from homeassistant.components.onboarding import (
+    STEPS,
     BaseOnboardingView,
     NoAuthBaseOnboardingView,
 )
-from homeassistant.components.onboarding.const import STEPS
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 

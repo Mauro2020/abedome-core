@@ -754,7 +754,9 @@ async def test_setup_platform_if_not_onboarded(
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
-    platform_mock.async_setup_views.assert_awaited_once_with(hass, {"done": []})
+    platform_mock.async_setup_views.assert_awaited_once_with(
+        hass, {"done": [onboarding.STEP_ANALYTICS]}
+    )
 
 
 @pytest.mark.parametrize(

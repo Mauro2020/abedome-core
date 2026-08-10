@@ -9,10 +9,10 @@ from aiohttp.web_exceptions import HTTPUnauthorized
 
 from homeassistant.components.http import KEY_HASS
 from homeassistant.components.onboarding import (
+    STEPS,
     BaseOnboardingView,
     NoAuthBaseOnboardingView,
 )
-from homeassistant.components.onboarding.const import STEPS
 from homeassistant.core import HomeAssistant
 
 from . import http_api as cloud_http

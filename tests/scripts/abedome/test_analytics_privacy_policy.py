@@ -8,17 +8,8 @@ from aiohasupervisor import SupervisorError
 import pytest
 
 from homeassistant import brand
+from homeassistant.components import analytics as analytics_component
 from homeassistant.components.analytics import CONF_SNAPSHOTS_URL, DATA_COMPONENT
-from homeassistant.components.analytics.analytics import Analytics
-from homeassistant.components.analytics.const import (
-    ATTR_BASE,
-    ATTR_DIAGNOSTICS,
-    ATTR_SNAPSHOTS,
-    ATTR_STATISTICS,
-    ATTR_USAGE,
-    DOMAIN,
-    STORAGE_KEY,
-)
 from homeassistant.components.hassio import HassioNotReadyError
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -30,6 +21,14 @@ from tests.test_util.aiohttp import AiohttpClientMocker
 from tests.typing import WebSocketGenerator
 
 CUSTOM_SNAPSHOT_URL = "https://analytics-disabled.example.com"
+
+ATTR_BASE = analytics_component.const.ATTR_BASE
+ATTR_DIAGNOSTICS = analytics_component.const.ATTR_DIAGNOSTICS
+ATTR_SNAPSHOTS = analytics_component.const.ATTR_SNAPSHOTS
+ATTR_STATISTICS = analytics_component.const.ATTR_STATISTICS
+ATTR_USAGE = analytics_component.const.ATTR_USAGE
+DOMAIN = analytics_component.const.DOMAIN
+STORAGE_KEY = analytics_component.const.STORAGE_KEY
 
 
 def _enabled_storage() -> dict[str, Any]:
@@ -60,7 +59,7 @@ async def test_legacy_storage_is_sanitized_and_never_submitted(
     """Test enabled legacy state is cleared without any outbound submission."""
     assert not brand.UPSTREAM_ANALYTICS_ENABLED
     hass_storage[STORAGE_KEY] = _enabled_storage()
-    analytics = Analytics(hass)
+    analytics = analytics_component.Analytics(hass)
     basic_cancel = Mock()
     snapshot_cancel = Mock()
     analytics._basic_scheduled = basic_cancel
@@ -147,7 +146,7 @@ async def test_supervisor_diagnostics_is_forced_off(
     supervisor_diagnostics: bool,
 ) -> None:
     """Test Supervisor diagnostics is explicitly disabled during each guard pass."""
-    analytics = Analytics(hass)
+    analytics = analytics_component.Analytics(hass)
 
     with (
         patch(
