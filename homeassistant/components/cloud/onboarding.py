@@ -9,6 +9,7 @@ from aiohttp.web_exceptions import HTTPUnauthorized
 
 from homeassistant.components.http import KEY_HASS
 from homeassistant.components.onboarding import (
+    STEPS,
     BaseOnboardingView,
     NoAuthBaseOnboardingView,
 )
@@ -46,7 +47,7 @@ def ensure_not_done[_ViewT: BaseOnboardingView, **_P](
         **kwargs: _P.kwargs,
     ) -> web.Response:
         """Check onboarding status, cloud and call function."""
-        if self._data["done"]:
+        if any(step in self._data["done"] for step in STEPS):
             # If at least one onboarding step is done, we don't allow accessing
             # the cloud onboarding views.
             raise HTTPUnauthorized

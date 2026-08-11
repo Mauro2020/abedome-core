@@ -216,7 +216,7 @@ DEFAULT_INTEGRATIONS = {
     # These integrations are set up unless recovery mode is activated.
     #
     # Integrations providing core functionality:
-    "analytics",  # Needed for onboarding
+    "analytics",  # Enforces the downstream privacy policy
     "application_credentials",
     "backup",
     "brands",

@@ -101,6 +101,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if TYPE_CHECKING:
         assert isinstance(data, dict)
 
+    store_changed = False
+    if STEP_ANALYTICS not in data["done"]:
+        data["done"].append(STEP_ANALYTICS)
+        store_changed = True
+
     if STEP_USER not in data["done"]:
         # Users can already have created an owner account via the command line
         # If so, mark the user step as done.
@@ -113,9 +118,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         if has_owner:
             data["done"].append(STEP_USER)
-            await store.async_save(data)
+            store_changed = True
 
-    if set(data["done"]) == set(STEPS):
+    if store_changed:
+        await store.async_save(data)
+
+    if set(STEPS).issubset(data["done"]):
         return True
 
     hass.data[DOMAIN] = OnboardingData([], False, data)

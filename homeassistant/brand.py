@@ -12,6 +12,7 @@ DISTRIBUTION_DISPLAY_NAME: Final = "ABEDOME"
 CORE_NAME: Final = "ABEDOME Core"
 SUPERVISOR_NAME: Final = "ABEDOME Supervisor"
 UPSTREAM_PROJECT_NAME: Final = "Home Assistant"
+UPSTREAM_ANALYTICS_ENABLED: Final = False
 CLI_DESCRIPTION: Final = DISTRIBUTION_NAME
 PRODUCT_ICON_URL: Final = "/static/icons/favicon-192x192.png"
 DEVELOPMENT_BRANCH: Final = "abedome/develop"

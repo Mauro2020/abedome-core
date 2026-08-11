@@ -29,7 +29,9 @@ async def test_not_setup_views_if_onboarded(
     assert onboarding.async_is_onboarded(hass)
 
 
-async def test_setup_views_if_not_onboarded(hass: HomeAssistant) -> None:
+async def test_setup_views_if_not_onboarded(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
     """Test if onboarding is not done, we setup views."""
     with patch(
         "homeassistant.components.onboarding.views.async_setup",
@@ -40,6 +42,26 @@ async def test_setup_views_if_not_onboarded(hass: HomeAssistant) -> None:
     assert onboarding.DOMAIN in hass.data
 
     assert not onboarding.async_is_onboarded(hass)
+    assert hass_storage[onboarding.STORAGE_KEY]["data"]["done"] == [
+        onboarding.STEP_ANALYTICS
+    ]
+    assert onboarding.STEP_ANALYTICS not in onboarding.STEPS
+
+
+async def test_incomplete_storage_adds_legacy_analytics_marker(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """Test incomplete onboarding stays rollback compatible without a visible step."""
+    mock_storage(hass_storage, {"done": [onboarding.STEP_USER]})
+
+    assert await async_setup_component(hass, DOMAIN, {})
+
+    assert not onboarding.async_is_onboarded(hass)
+    assert hass_storage[onboarding.STORAGE_KEY]["data"]["done"] == [
+        onboarding.STEP_USER,
+        onboarding.STEP_ANALYTICS,
+    ]
+    assert onboarding.STEP_ANALYTICS not in onboarding.STEPS
 
 
 async def test_is_onboarded() -> None:
@@ -100,3 +122,30 @@ async def test_migration(hass: HomeAssistant, hass_storage: dict[str, Any]) -> N
     hass_storage[onboarding.STORAGE_KEY] = {"version": 1, "data": {"done": ["user"]}}
     assert await async_setup_component(hass, DOMAIN, {})
     assert onboarding.async_is_onboarded(hass)
+    done = hass_storage[onboarding.STORAGE_KEY]["data"]["done"]
+    assert set(onboarding.STEPS).issubset(done)
+    assert onboarding.STEP_ANALYTICS in done
+
+
+async def test_legacy_analytics_step_does_not_block_onboarding(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """Test the hidden legacy analytics marker remains rollback compatible."""
+    done = [
+        onboarding.STEP_USER,
+        onboarding.STEP_CORE_CONFIG,
+        onboarding.STEP_ANALYTICS,
+        onboarding.STEP_INTEGRATION,
+    ]
+    hass_storage[onboarding.STORAGE_KEY] = {
+        "version": onboarding.STORAGE_VERSION,
+        "data": {"done": done},
+    }
+
+    assert await async_setup_component(hass, DOMAIN, {})
+
+    assert onboarding.async_is_onboarded(hass)
+    assert hass_storage[onboarding.STORAGE_KEY] == {
+        "version": onboarding.STORAGE_VERSION,
+        "data": {"done": done},
+    }

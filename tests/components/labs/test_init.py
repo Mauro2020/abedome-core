@@ -16,6 +16,7 @@ from homeassistant.components.labs import (
 from homeassistant.components.labs.const import DOMAIN, LABS_DATA
 from homeassistant.components.labs.models import LabPreviewFeature
 from homeassistant.core import HomeAssistant
+from homeassistant.generated.labs import LABS_PREVIEW_FEATURES
 from homeassistant.loader import Integration
 from homeassistant.setup import async_setup_component
 
@@ -32,6 +33,11 @@ async def test_async_setup(hass: HomeAssistant) -> None:
     # Verify WebSocket commands are registered
     assert "labs/list" in hass.data["websocket_api"]
     assert "labs/update" in hass.data["websocket_api"]
+
+
+def test_analytics_preview_feature_removed() -> None:
+    """Test upstream analytics is not exposed as an ABEDOME Labs feature."""
+    assert "analytics" not in LABS_PREVIEW_FEATURES
 
 
 async def test_async_is_preview_feature_enabled_not_setup(hass: HomeAssistant) -> None:
