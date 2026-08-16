@@ -10,7 +10,12 @@ from aiohttp.web_exceptions import HTTPUnauthorized
 import voluptuous as vol
 
 from homeassistant.auth.const import GROUP_ID_ADMIN
-from homeassistant.auth.providers.homeassistant import HassAuthProvider
+from homeassistant.auth.models import User
+from homeassistant.auth.providers.homeassistant import (
+    HassAuthProvider,
+    InvalidUser,
+    InvalidUsername,
+)
 from homeassistant.components import person
 from homeassistant.components.auth import indieauth
 from homeassistant.components.http import KEY_HASS, KEY_HASS_REFRESH_TOKEN_ID
@@ -182,42 +187,148 @@ class UserOnboardingView(_BaseOnboardingStepView):
             if self._async_is_done():
                 return self.json_message("User step already done", HTTPStatus.FORBIDDEN)
 
-            provider = _async_get_hass_provider(hass)
-            await provider.async_initialize()
-
-            user = await hass.auth.async_create_user(
-                data["name"], group_ids=[GROUP_ID_ADMIN]
-            )
-            await provider.async_add_auth(data["username"], data["password"])
-            credentials = await provider.async_get_or_create_credentials(
-                {"username": data["username"]}
-            )
-            await hass.auth.async_link_user(user, credentials)
-            if await async_wait_component(hass, "person"):
-                await person.async_create_person(hass, data["name"], user_id=user.id)
-
-            # Create default areas using the users supplied language.
             translations = await async_get_translations(
                 hass, data["language"], "area", {DOMAIN}
             )
-
-            area_registry = ar.async_get(hass)
-
+            area_names: dict[str, str] = {}
+            missing_area_keys: list[str] = []
             for area in DEFAULT_AREAS:
-                name = translations[f"component.onboarding.area.{area.key}"]
-                # Guard because area might have been created by an automatically
-                # set up integration.
-                if not area_registry.async_get_area_by_name(name):
-                    area_registry.async_create(name, icon=area.icon)
+                translation_key = f"component.onboarding.area.{area.key}"
+                area_name = translations.get(translation_key)
+                if not isinstance(area_name, str) or not area_name:
+                    missing_area_keys.append(area.key)
+                    area_name = area.fallback_name
+                area_names[area.key] = area_name
 
-            await self._async_mark_done(hass)
+            if missing_area_keys:
+                _LOGGER.warning(
+                    "Missing onboarding area translations for language %r: %s; "
+                    "using English fallbacks",
+                    data["language"],
+                    ", ".join(missing_area_keys),
+                )
 
-            # Return authorization code for fetching tokens and connect
-            # during onboarding.
-            from homeassistant.components.auth import create_auth_code  # noqa: PLC0415
+            provider = _async_get_hass_provider(hass)
+            await provider.async_initialize()
 
-            auth_code = create_auth_code(hass, data["client_id"], credentials)
+            user: User | None = None
+            cleanup_auth = False
+            try:
+                try:
+                    await provider.async_add_auth(data["username"], data["password"])
+                except InvalidUsername:
+                    raise
+                except Exception, asyncio.CancelledError:
+                    # The provider mutates memory before its atomic save completes.
+                    cleanup_auth = True
+                    raise
+
+                cleanup_auth = True
+                user = await hass.auth.async_create_user(
+                    data["name"], group_ids=[GROUP_ID_ADMIN]
+                )
+                credentials = await provider.async_get_or_create_credentials(
+                    {"username": data["username"]}
+                )
+                await hass.auth.async_link_user(user, credentials)
+
+                from homeassistant.components.auth import (  # noqa: PLC0415
+                    create_auth_code,
+                )
+
+                await self._async_mark_done(hass)
+                auth_code = create_auth_code(hass, data["client_id"], credentials)
+            except Exception, asyncio.CancelledError:
+                # A cancelled request must not leave a reusable local credential.
+                await self._async_rollback_user_step(hass)
+                if cleanup_auth:
+                    await self._async_rollback_user(
+                        hass, provider, data["username"], user
+                    )
+                raise
+
+            assert user is not None
+            hass.async_create_task(
+                self._async_create_user_entities(
+                    hass, data["name"], user.id, area_names
+                ),
+                "create onboarding person and areas",
+            )
             return self.json({"auth_code": auth_code})
+
+    async def _async_rollback_user_step(self, hass: HomeAssistant) -> None:
+        """Roll back a partially persisted user step without masking its error."""
+        if self.step not in self._data["done"]:
+            return
+
+        self._data["done"].remove(self.step)
+        try:
+            await self._store.async_save(self._data)
+        except asyncio.CancelledError:
+            _LOGGER.warning("Onboarding user step rollback was cancelled")
+        except Exception:
+            _LOGGER.exception("Failed to roll back the onboarding user step")
+
+    async def _async_rollback_user(
+        self,
+        hass: HomeAssistant,
+        provider: HassAuthProvider,
+        username: str,
+        user: User | None,
+    ) -> None:
+        """Remove account state created by a failed onboarding request."""
+        try:
+            await provider.async_remove_auth(username)
+        except InvalidUser:
+            pass
+        except asyncio.CancelledError:
+            _LOGGER.warning("Onboarding authentication rollback was cancelled")
+        except Exception:
+            _LOGGER.exception("Failed to roll back onboarding authentication")
+
+        if user is None:
+            return
+
+        try:
+            await hass.auth.async_remove_user(user)
+        except asyncio.CancelledError:
+            _LOGGER.warning("Onboarding user rollback was cancelled")
+        except Exception:
+            _LOGGER.exception("Failed to roll back the onboarding user")
+
+    async def _async_create_user_entities(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        user_id: str,
+        area_names: dict[str, str],
+    ) -> None:
+        """Create non-critical person and area records after onboarding commits."""
+        try:
+            person_loaded = await async_wait_component(hass, "person")
+        except Exception:
+            _LOGGER.exception("Failed to wait for person during onboarding")
+            person_loaded = False
+
+        if person_loaded:
+            try:
+                await person.async_create_person(hass, name, user_id=user_id)
+            except Exception:
+                _LOGGER.exception("Failed to create the onboarding person")
+
+        try:
+            area_registry = ar.async_get(hass)
+        except Exception:
+            _LOGGER.exception("Failed to load the area registry during onboarding")
+            return
+
+        for area in DEFAULT_AREAS:
+            area_name = area_names[area.key]
+            try:
+                if not area_registry.async_get_area_by_name(area_name):
+                    area_registry.async_create(area_name, icon=area.icon)
+            except Exception:
+                _LOGGER.exception("Failed to create onboarding area %s", area.key)
 
 
 class CoreConfigOnboardingView(_BaseOnboardingStepView):

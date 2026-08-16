@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from homeassistant.auth.providers.homeassistant import InvalidAuth
 from homeassistant.components import onboarding
 from homeassistant.components.onboarding import DOMAIN, const, views
 from homeassistant.core import HomeAssistant
@@ -184,9 +185,12 @@ async def test_onboarding_user(
 
     assert resp.status == 200
     assert const.STEP_USER in hass_storage[const.DOMAIN]["data"]["done"]
+    assert const.STEP_ANALYTICS in hass_storage[const.DOMAIN]["data"]["done"]
 
     data = await resp.json()
     assert "auth_code" in data
+
+    await hass.async_block_till_done()
 
     users = await hass.auth.async_get_users()
     assert len(await hass.auth.async_get_users()) == cur_users + 1
@@ -218,6 +222,289 @@ async def test_onboarding_user(
         "Kitchen",
         "Living Room",
     ]
+
+
+async def test_onboarding_user_missing_area_translations_uses_fallbacks(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+    area_registry: ar.AreaRegistry,
+) -> None:
+    """Test missing translations cannot partially create an onboarding user."""
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    client = await hass_client_no_auth()
+    with patch.object(
+        views,
+        "async_get_translations",
+        return_value={
+            "component.onboarding.area.bedroom": None,
+            "component.onboarding.area.kitchen": "",
+            "component.onboarding.area.living_room": {"invalid": "value"},
+        },
+    ):
+        resp = await client.post(
+            "/api/onboarding/users",
+            json={
+                "client_id": CLIENT_ID,
+                "name": "Test Name",
+                "username": "test-user",
+                "password": "test-pass",
+                "language": "it",
+            },
+        )
+
+    assert resp.status == HTTPStatus.OK
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [
+        const.STEP_ANALYTICS,
+        const.STEP_USER,
+    ]
+    await hass.async_block_till_done()
+    assert sorted(area.name for area in area_registry.async_list_areas()) == [
+        "Bedroom",
+        "Kitchen",
+        "Living Room",
+    ]
+
+
+async def test_onboarding_user_rolls_back_and_retries_same_username(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+) -> None:
+    """Test a failure after adding auth leaves no account state behind."""
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    provider = views._async_get_hass_provider(hass)
+    await provider.async_initialize()
+    original_user_count = len(await hass.auth.async_get_users())
+    client = await hass_client_no_auth()
+    payload = {
+        "client_id": CLIENT_ID,
+        "name": "Test Name",
+        "username": "test-user",
+        "password": "test-pass",
+        "language": "en",
+    }
+
+    with patch.object(
+        hass.auth, "async_link_user", side_effect=RuntimeError("link failed")
+    ):
+        resp = await client.post("/api/onboarding/users", json=payload)
+
+    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert len(await hass.auth.async_get_users()) == original_user_count
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
+    with pytest.raises(InvalidAuth):
+        await provider.async_validate_login("test-user", "test-pass")
+
+    resp = await client.post("/api/onboarding/users", json=payload)
+    assert resp.status == HTTPStatus.OK
+    await hass.async_block_till_done()
+    assert len(await hass.auth.async_get_users()) == original_user_count + 1
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [
+        const.STEP_ANALYTICS,
+        const.STEP_USER,
+    ]
+
+
+async def test_onboarding_user_rolls_back_auth_save_failure(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+) -> None:
+    """Test auth mutated in memory is removed when its atomic save fails."""
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    provider = views._async_get_hass_provider(hass)
+    await provider.async_initialize()
+    assert provider.data is not None
+    original_user_count = len(await hass.auth.async_get_users())
+    client = await hass_client_no_auth()
+    payload = {
+        "client_id": CLIENT_ID,
+        "name": "Test Name",
+        "username": "test-user",
+        "password": "test-pass",
+        "language": "en",
+    }
+
+    with patch.object(
+        provider.data, "async_save", side_effect=RuntimeError("save failed")
+    ):
+        resp = await client.post("/api/onboarding/users", json=payload)
+
+    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert len(await hass.auth.async_get_users()) == original_user_count
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
+    with pytest.raises(InvalidAuth):
+        await provider.async_validate_login("test-user", "test-pass")
+
+    resp = await client.post("/api/onboarding/users", json=payload)
+    assert resp.status == HTTPStatus.OK
+    await hass.async_block_till_done()
+
+
+async def test_onboarding_user_duplicate_auth_does_not_create_orphan(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+) -> None:
+    """Test duplicate local auth is rejected before creating a Core user."""
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    provider = views._async_get_hass_provider(hass)
+    await provider.async_initialize()
+    await provider.async_add_auth("test-user", "existing-pass")
+    original_user_count = len(await hass.auth.async_get_users())
+    client = await hass_client_no_auth()
+
+    resp = await client.post(
+        "/api/onboarding/users",
+        json={
+            "client_id": CLIENT_ID,
+            "name": "Test Name",
+            "username": "test-user",
+            "password": "test-pass",
+            "language": "en",
+        },
+    )
+
+    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert len(await hass.auth.async_get_users()) == original_user_count
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
+    await provider.async_validate_login("test-user", "existing-pass")
+
+
+async def test_onboarding_user_rolls_back_auth_code_failure(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+) -> None:
+    """Test auth-code failure leaves no user, local auth, or completed step."""
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    provider = views._async_get_hass_provider(hass)
+    await provider.async_initialize()
+    original_user_count = len(await hass.auth.async_get_users())
+    client = await hass_client_no_auth()
+    payload = {
+        "client_id": CLIENT_ID,
+        "name": "Test Name",
+        "username": "test-user",
+        "password": "test-pass",
+        "language": "en",
+    }
+
+    with patch(
+        "homeassistant.components.auth.create_auth_code",
+        side_effect=RuntimeError("auth code failed"),
+    ):
+        resp = await client.post("/api/onboarding/users", json=payload)
+
+    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert len(await hass.auth.async_get_users()) == original_user_count
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
+    with pytest.raises(InvalidAuth):
+        await provider.async_validate_login("test-user", "test-pass")
+
+    resp = await client.post("/api/onboarding/users", json=payload)
+    assert resp.status == HTTPStatus.OK
+    await hass.async_block_till_done()
+
+
+async def test_onboarding_user_rolls_back_mark_done_save_failure(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+) -> None:
+    """Test a failed step save rolls back and permits the same username."""
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    provider = views._async_get_hass_provider(hass)
+    await provider.async_initialize()
+    original_user_count = len(await hass.auth.async_get_users())
+    client = await hass_client_no_auth()
+    payload = {
+        "client_id": CLIENT_ID,
+        "name": "Test Name",
+        "username": "test-user",
+        "password": "test-pass",
+        "language": "en",
+    }
+
+    with (
+        patch.object(
+            onboarding.OnboardingStorage,
+            "async_save",
+            new=AsyncMock(side_effect=[RuntimeError("step save failed"), None]),
+        ),
+        patch("homeassistant.components.auth.create_auth_code") as mock_auth_code,
+    ):
+        resp = await client.post("/api/onboarding/users", json=payload)
+
+    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
+    mock_auth_code.assert_not_called()
+    assert len(await hass.auth.async_get_users()) == original_user_count
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
+    with pytest.raises(InvalidAuth):
+        await provider.async_validate_login("test-user", "test-pass")
+
+    resp = await client.post("/api/onboarding/users", json=payload)
+    assert resp.status == HTTPStatus.OK
+    await hass.async_block_till_done()
+
+
+async def test_onboarding_user_auxiliary_failures_are_best_effort(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+    area_registry: ar.AreaRegistry,
+) -> None:
+    """Test person and area failures cannot undo committed onboarding."""
+    assert await async_setup_component(hass, "person", {})
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    client = await hass_client_no_auth()
+    with (
+        patch.object(
+            views.person,
+            "async_create_person",
+            side_effect=RuntimeError("person failed"),
+        ) as mock_create_person,
+        patch.object(
+            ar.AreaRegistry,
+            "async_create",
+            side_effect=RuntimeError("area failed"),
+        ) as mock_create_area,
+    ):
+        resp = await client.post(
+            "/api/onboarding/users",
+            json={
+                "client_id": CLIENT_ID,
+                "name": "Test Name",
+                "username": "test-user",
+                "password": "test-pass",
+                "language": "en",
+            },
+        )
+        assert resp.status == HTTPStatus.OK
+        await hass.async_block_till_done()
+
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [
+        const.STEP_ANALYTICS,
+        const.STEP_USER,
+    ]
+    mock_create_person.assert_awaited_once()
+    assert mock_create_area.call_count == len(const.DEFAULT_AREAS)
+    assert not area_registry.areas
 
 
 async def test_onboarding_user_invalid_name(
