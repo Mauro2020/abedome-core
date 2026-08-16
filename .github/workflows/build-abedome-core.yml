@@ -15,15 +15,19 @@ on:
       - "homeassistant/brand.py"
       - "homeassistant/__main__.py"
       - "homeassistant/components/frontend/**"
+      - "homeassistant/components/onboarding/**"
       - "homeassistant/package_constraints.txt"
       - "requirements.txt"
       - "requirements_all.txt"
       - "script/abedome/check_ghcr_tag.py"
+      - "script/abedome/import_backend_translations.py"
       - "script/hassfest/mdi_icons.py"
       - "tests/scripts/abedome/test_check_ghcr_tag.py"
+      - "tests/scripts/abedome/test_import_backend_translations.py"
       - "tests/scripts/abedome/test_publish_contract.py"
       - "tests/test_brand.py"
       - "tests/components/frontend/**"
+      - "tests/components/onboarding/**"
       - "pyproject.toml"
       - ".python-version"
 
@@ -52,12 +56,31 @@ jobs:
           check-latest: true
 
       - name: Install build and test tools
-        run: python -m pip install --upgrade pip build pytest
+        run: python -m pip install --upgrade pip build pytest orjson==3.11.9
+
+      - name: Prepare pinned backend translations
+        env:
+          UPSTREAM_TRANSLATIONS_SHA256: 35005ce5491f64e48dfa0ca8436751474b8d8ec346a2406c2e2ba0f40427afcd
+          UPSTREAM_TRANSLATIONS_URL: https://files.pythonhosted.org/packages/f9/77/1fa0722a0b8417069844a067a2d16aeaa28b2894f462b37553e421f29bfd/homeassistant-2026.8.1-py3-none-any.whl
+        run: |
+          set -euo pipefail
+          translation_wheel="${RUNNER_TEMP}/homeassistant-2026.8.1-py3-none-any.whl"
+          curl --fail --location --retry 3 \
+            --output "$translation_wheel" \
+            "$UPSTREAM_TRANSLATIONS_URL"
+          python script/abedome/import_backend_translations.py import \
+            --wheel "$translation_wheel" \
+            --expected-sha256 "$UPSTREAM_TRANSLATIONS_SHA256" \
+            --require-language it
+          python -m script.translations develop --all
+          python script/abedome/import_backend_translations.py \
+            verify --language en --language it
 
       - name: Test the Core publication contract
         run: >-
           python -m pytest -q --confcutdir=tests/scripts/abedome
           tests/scripts/abedome/test_check_ghcr_tag.py
+          tests/scripts/abedome/test_import_backend_translations.py
           tests/scripts/abedome/test_publish_contract.py
 
       - name: Verify the published ABEDOME Frontend
@@ -104,6 +127,30 @@ jobs:
 
       - name: Build Core distribution archives
         run: python -m build
+
+      - name: Verify Core distribution translations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import tarfile
+          import zipfile
+
+          required = {
+              "homeassistant/components/onboarding/translations/en.json",
+              "homeassistant/components/onboarding/translations/it.json",
+          }
+          wheel = next(Path("dist").glob("*.whl"))
+          source = next(Path("dist").glob("*.tar.gz"))
+          with zipfile.ZipFile(wheel) as archive:
+              wheel_members = set(archive.namelist())
+          with tarfile.open(source, "r:gz") as archive:
+              source_members = {member.name for member in archive.getmembers()}
+          assert required <= wheel_members
+          assert all(
+              any(member.endswith(f"/{required_file}") for member in source_members)
+              for required_file in required
+          )
+          PY
 
       - name: Retain the Core distribution
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

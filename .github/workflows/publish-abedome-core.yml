@@ -31,6 +31,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Import pinned upstream backend translations
+        env:
+          UPSTREAM_TRANSLATIONS_SHA256: 35005ce5491f64e48dfa0ca8436751474b8d8ec346a2406c2e2ba0f40427afcd
+          UPSTREAM_TRANSLATIONS_URL: https://files.pythonhosted.org/packages/f9/77/1fa0722a0b8417069844a067a2d16aeaa28b2894f462b37553e421f29bfd/homeassistant-2026.8.1-py3-none-any.whl
+        run: |
+          set -euo pipefail
+          translation_wheel="${RUNNER_TEMP}/homeassistant-2026.8.1-py3-none-any.whl"
+          curl --fail --location --retry 3 \
+            --output "$translation_wheel" \
+            "$UPSTREAM_TRANSLATIONS_URL"
+          python3 script/abedome/import_backend_translations.py import \
+            --wheel "$translation_wheel" \
+            --expected-sha256 "$UPSTREAM_TRANSLATIONS_SHA256" \
+            --require-language it
+
       - name: Validate the immutable product versions
         env:
           EXPECTED_FRONTEND_SHA256: 3b47c79d8dc7018a1dc5d6886486dd4bef90bfb0e692102e76325af8777e34f0
@@ -166,6 +181,9 @@ jobs:
             echo "::error::Immutable image revision $image_revision does not match $EXPECTED_REVISION"
             exit 1
           fi
+          docker run --rm --entrypoint python3 "$immutable_ref" \
+            /usr/src/homeassistant/script/abedome/import_backend_translations.py \
+            verify --language en --language it
 
       - name: Promote verified image to landing-page bootstrap alias
         env:

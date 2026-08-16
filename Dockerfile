@@ -53,11 +53,19 @@ RUN \
         -r homeassistant/requirements_all.txt
 
 ## Setup Home Assistant Core
-COPY --parents LICENSE* README* homeassistant/ pyproject.toml homeassistant/
+# Generate English from this exact fork after its pinned requirements are ready.
+COPY --parents \
+    LICENSE* README* homeassistant/ pyproject.toml \
+    script/__init__.py script/abedome/ script/translations/ \
+    homeassistant/
+WORKDIR /usr/src/homeassistant
 RUN \
-    uv pip install \
-        -e ./homeassistant \
+    python3 -m script.translations develop --all \
+    && python3 script/abedome/import_backend_translations.py \
+        verify --language en --language it \
+    && uv pip install \
+        -e . \
     && python3 -m compileall \
-        homeassistant/homeassistant
+        homeassistant
 
 WORKDIR /config
