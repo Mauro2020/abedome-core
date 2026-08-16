@@ -130,7 +130,7 @@ TwitterAPI==2.7.12
 WSDiscovery==2.1.2
 
 # homeassistant.components.frontend
-abedome-frontend==2026.8.5.dev6
+abedome-frontend==2026.8.5.dev7
 
 # homeassistant.components.accuweather
 accuweather==5.1.0
