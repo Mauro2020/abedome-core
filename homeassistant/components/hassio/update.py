@@ -7,6 +7,16 @@ from aiohasupervisor import SupervisorError
 from aiohasupervisor.models import Job
 from awesomeversion import AwesomeVersion, AwesomeVersionStrategy
 
+from homeassistant.brand import (
+    CORE_NAME,
+    CORE_REPOSITORY_URL,
+    DEVELOPMENT_BRANCH,
+    DISTRIBUTION_NAME,
+    OS_REPOSITORY_URL,
+    PRODUCT_ICON_URL,
+    SUPERVISOR_NAME,
+    SUPERVISOR_REPOSITORY_URL,
+)
 from homeassistant.components.update import (
     ATTR_INSTALLED_VERSION,
     ATTR_LATEST_VERSION,
@@ -254,7 +264,7 @@ class SupervisorOSUpdateEntity(HassioOSEntity, UpdateEntity):
         | UpdateEntityFeature.BACKUP
         | UpdateEntityFeature.RELEASE_NOTES
     )
-    _attr_title = "Home Assistant Operating System"
+    _attr_title = DISTRIBUTION_NAME
 
     @property
     @override
@@ -276,7 +286,7 @@ class SupervisorOSUpdateEntity(HassioOSEntity, UpdateEntity):
     @override
     def entity_picture(self) -> str | None:
         """Return the icon of the entity."""
-        return "/api/brands/integration/homeassistant/icon.png?placeholder=no"
+        return PRODUCT_ICON_URL
 
     @property
     @override
@@ -284,10 +294,8 @@ class SupervisorOSUpdateEntity(HassioOSEntity, UpdateEntity):
         """URL to the full release notes of the latest version available."""
         version = AwesomeVersion(self.latest_version)
         if version.dev or version.strategy == AwesomeVersionStrategy.UNKNOWN:
-            return "https://github.com/home-assistant/operating-system/commits/dev"
-        return (
-            f"https://github.com/home-assistant/operating-system/releases/tag/{version}"
-        )
+            return f"{OS_REPOSITORY_URL}/commits/{DEVELOPMENT_BRANCH}"
+        return f"{OS_REPOSITORY_URL}/releases/tag/{version}"
 
     @override
     async def async_install(
@@ -317,7 +325,7 @@ class SupervisorSupervisorUpdateEntity(HassioSupervisorEntity, UpdateEntity):
     _attr_supported_features = (
         UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
     )
-    _attr_title = "Home Assistant Supervisor"
+    _attr_title = SUPERVISOR_NAME
     _update_ongoing: bool = False
     _version_before_update: str | None = None
 
@@ -353,14 +361,14 @@ class SupervisorSupervisorUpdateEntity(HassioSupervisorEntity, UpdateEntity):
         """URL to the full release notes of the latest version available."""
         version = AwesomeVersion(self.latest_version)
         if version.dev or version.strategy == AwesomeVersionStrategy.UNKNOWN:
-            return "https://github.com/home-assistant/supervisor/commits/main"
-        return f"https://github.com/home-assistant/supervisor/releases/tag/{version}"
+            return f"{SUPERVISOR_REPOSITORY_URL}/commits/{DEVELOPMENT_BRANCH}"
+        return f"{SUPERVISOR_REPOSITORY_URL}/releases/tag/{version}"
 
     @property
     @override
     def entity_picture(self) -> str | None:
         """Return the icon of the entity."""
-        return "/api/brands/integration/hassio/icon.png?placeholder=no"
+        return PRODUCT_ICON_URL
 
     @override
     async def async_install(
@@ -379,7 +387,7 @@ class SupervisorSupervisorUpdateEntity(HassioSupervisorEntity, UpdateEntity):
             self._attr_in_progress = False
             self.async_write_ha_state()
             raise HomeAssistantError(
-                f"Error updating Home Assistant Supervisor: {err}"
+                f"Error updating {SUPERVISOR_NAME}: {err}"
             ) from err
 
     @callback
@@ -431,7 +439,7 @@ class SupervisorCoreUpdateEntity(HassioCoreEntity, UpdateEntity):
         | UpdateEntityFeature.BACKUP
         | UpdateEntityFeature.PROGRESS
     )
-    _attr_title = "Home Assistant Core"
+    _attr_title = CORE_NAME
     _unsub_skipped_version: CALLBACK_TYPE | None = None
 
     @property
@@ -450,7 +458,7 @@ class SupervisorCoreUpdateEntity(HassioCoreEntity, UpdateEntity):
     @override
     def entity_picture(self) -> str | None:
         """Return the icon of the entity."""
-        return "/api/brands/integration/homeassistant/icon.png?placeholder=no"
+        return PRODUCT_ICON_URL
 
     @property
     @override
@@ -458,9 +466,8 @@ class SupervisorCoreUpdateEntity(HassioCoreEntity, UpdateEntity):
         """URL to the full release notes of the latest version available."""
         version = AwesomeVersion(self.latest_version)
         if version.dev:
-            return "https://github.com/home-assistant/core/commits/dev"
-        subdomain = "rc" if version.beta else "www"
-        return f"https://{subdomain}.home-assistant.io/latest-release-notes/"
+            return f"{CORE_REPOSITORY_URL}/commits/{DEVELOPMENT_BRANCH}"
+        return f"{CORE_REPOSITORY_URL}/releases/tag/{version}"
 
     @override
     async def async_install(

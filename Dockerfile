@@ -5,14 +5,21 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
+ARG BUILD_VERSION
+ARG BUILD_REVISION
+
 LABEL \
     io.hass.type="core" \
-    org.opencontainers.image.authors="The Home Assistant Authors" \
-    org.opencontainers.image.description="Open-source home automation platform running on Python 3" \
-    org.opencontainers.image.documentation="https://www.home-assistant.io/docs/" \
+    io.hass.version="${BUILD_VERSION}" \
+    org.opencontainers.image.authors="ABEDOME contributors" \
+    org.opencontainers.image.description="Independent ABEDOME home automation Core distribution" \
+    org.opencontainers.image.documentation="https://github.com/Mauro2020/abedome-core" \
     org.opencontainers.image.licenses="Apache-2.0" \
-    org.opencontainers.image.title="Home Assistant" \
-    org.opencontainers.image.url="https://www.home-assistant.io/"
+    org.opencontainers.image.revision="${BUILD_REVISION}" \
+    org.opencontainers.image.source="https://github.com/Mauro2020/abedome-core" \
+    org.opencontainers.image.title="ABEDOME Core" \
+    org.opencontainers.image.url="https://github.com/Mauro2020/abedome-core" \
+    org.opencontainers.image.version="${BUILD_VERSION}"
 
 # Synchronize with homeassistant/core.py:async_stop
 ENV \
@@ -49,11 +56,18 @@ RUN \
         -r homeassistant/requirements_all.txt
 
 ## Setup Home Assistant Core
-COPY --parents LICENSE* README* homeassistant/ pyproject.toml homeassistant/
+COPY --parents \
+    LICENSE* README* homeassistant/ pyproject.toml \
+    script/__init__.py script/abedome/ script/translations/ \
+    homeassistant/
+WORKDIR /usr/src/homeassistant
 RUN \
-    uv pip install \
-        -e ./homeassistant \
+    python3 -m script.translations develop --all \
+    && python3 script/abedome/import_backend_translations.py \
+        verify --language en --language it \
+    && uv pip install \
+        -e . \
     && python3 -m compileall \
-        homeassistant/homeassistant
+        homeassistant
 
 WORKDIR /config

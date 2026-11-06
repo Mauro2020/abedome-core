@@ -13,7 +13,7 @@ import uuid
 
 import aiohttp
 
-from homeassistant import config as conf_util
+from homeassistant import brand, config as conf_util
 from homeassistant.components import hassio
 from homeassistant.components.api import ATTR_INSTALLATION_TYPE
 from homeassistant.components.automation import DOMAIN as AUTOMATION_DOMAIN
@@ -255,6 +255,14 @@ class Analytics:
     @property
     def preferences(self) -> dict:
         """Return the current active preferences."""
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            return {
+                ATTR_BASE: False,
+                ATTR_DIAGNOSTICS: False,
+                ATTR_USAGE: False,
+                ATTR_STATISTICS: False,
+                ATTR_SNAPSHOTS: False,
+            }
         preferences = self._data.preferences
         return {
             ATTR_BASE: preferences.get(ATTR_BASE, False),
@@ -298,6 +306,10 @@ class Analytics:
         if stored:
             self._data = AnalyticsData.from_dict(stored)
 
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            await self._async_enforce_downstream_policy()
+            return
+
         if self.supervisor and not self.onboarded:
             # This may raise HassioNotReadyError if Supervisor was unreachable.
             # The caller is responsible for handling this and triggering a retry.
@@ -317,8 +329,36 @@ class Analytics:
         """Save data."""
         await self._store.async_save(dataclass_asdict(self._data))
 
+    async def _async_enforce_downstream_policy(self) -> None:
+        """Disable upstream analytics and remove persisted identifiers."""
+        self._async_cancel_schedule()
+        disabled_data = AnalyticsData(True, {})
+        if self._data != disabled_data:
+            self._data = disabled_data
+            await self._save()
+
+        if not self.supervisor:
+            return
+
+        hassio.get_supervisor_info(self._hass)
+        await hassio.async_update_diagnostics(self._hass, False)
+
+    @callback
+    def _async_cancel_schedule(self) -> None:
+        """Cancel all pending analytics submissions."""
+        if self._basic_scheduled is not None:
+            self._basic_scheduled()
+            self._basic_scheduled = None
+        if self._snapshot_scheduled is not None:
+            self._snapshot_scheduled()
+            self._snapshot_scheduled = None
+
     async def save_preferences(self, preferences: dict) -> None:
         """Save preferences."""
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            await self._async_enforce_downstream_policy()
+            return
+
         preferences = PREFERENCE_SCHEMA(preferences)
         self._data.preferences.update(preferences)
         self._data.onboarded = True
@@ -332,6 +372,9 @@ class Analytics:
 
     async def send_analytics(self, _: datetime | None = None) -> None:
         """Send analytics."""
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            return
+
         if not self.onboarded or not self.preferences.get(ATTR_BASE, False):
             return
 
@@ -532,6 +575,9 @@ class Analytics:
 
     async def send_snapshot(self, _: datetime | None = None) -> None:
         """Send a snapshot."""
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            return
+
         if not self.onboarded or not self.preferences.get(ATTR_SNAPSHOTS, False):
             return
 
@@ -628,14 +674,13 @@ class Analytics:
 
     async def async_schedule(self) -> None:
         """Schedule analytics."""
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            await self._async_enforce_downstream_policy()
+            return
+
         if not self.onboarded:
             LOGGER.debug("Analytics not scheduled")
-            if self._basic_scheduled is not None:
-                self._basic_scheduled()
-                self._basic_scheduled = None
-            if self._snapshot_scheduled:
-                self._snapshot_scheduled()
-                self._snapshot_scheduled = None
+            self._async_cancel_schedule()
             return
 
         if not self.preferences.get(ATTR_BASE, False):
@@ -696,6 +741,10 @@ class Analytics:
         """Schedule basic analytics."""
         await self.send_analytics()
 
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            self._basic_scheduled = None
+            return
+
         # Send basic analytics every day
         self._basic_scheduled = async_track_time_interval(
             self._hass,
@@ -708,6 +757,10 @@ class Analytics:
     async def _async_schedule_snapshots(self, _: datetime | None = None) -> None:
         """Schedule snapshot analytics."""
         await self.send_snapshot()
+
+        if not brand.UPSTREAM_ANALYTICS_ENABLED:
+            self._snapshot_scheduled = None
+            return
 
         # Send snapshot analytics every day
         self._snapshot_scheduled = async_track_time_interval(

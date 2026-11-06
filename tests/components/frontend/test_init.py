@@ -34,6 +34,7 @@ from homeassistant.components.frontend import (
     DATA_PANELS,
     DOMAIN,
     EVENT_PANELS_UPDATED,
+    FRONTEND_REQUIREMENT_PREFIXES,
     THEMES_STORAGE_KEY,
     add_extra_js_url,
     async_get_theme_names,
@@ -973,7 +974,7 @@ async def test_get_version(
     cur_version = next(
         req.split("==", 1)[1]
         for req in frontend.requirements
-        if req.startswith("home-assistant-frontend==")
+        if req.startswith(FRONTEND_REQUIREMENT_PREFIXES)
     )
 
     await ws_client.send_json({"id": 5, "type": "frontend/get_version"})
@@ -1028,6 +1029,9 @@ async def test_manifest_json(hass: HomeAssistant, mock_http_client: TestClient) 
 
     json = await resp.json()
     assert json["theme_color"] == DEFAULT_THEME_COLOR
+    assert json["name"] == "ABEDOME"
+    assert json["short_name"] == "ABEDOME"
+    assert "related_applications" not in json
 
     await hass.services.async_call(
         DOMAIN, "set_theme", {"name": "happy"}, blocking=True

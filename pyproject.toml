@@ -23,6 +23,7 @@ classifiers = [
 ]
 requires-python = ">=3.14.2"
 dependencies = [
+  "abedome-frontend @ https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-20261028.4/abedome_frontend-20261028.4-py3-none-any.whl#sha256=0822d3934c525795148d7d0927529f60cd227f5cf8f359efe019cc7d1b1815fa",
   "aiodns==4.0.4",
   # aiogithubapi is needed by frontend; frontend is unconditionally imported at
   # module level in `bootstrap.py` and its requirements thus need to be in

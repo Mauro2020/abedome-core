@@ -194,6 +194,7 @@ async def test_onboarding_user(
 
     assert resp.status == 200
     assert const.STEP_USER in hass_storage[const.DOMAIN]["data"]["done"]
+    assert const.STEP_ANALYTICS in hass_storage[const.DOMAIN]["data"]["done"]
 
     data = await resp.json()
     assert "auth_code" in data
@@ -223,6 +224,49 @@ async def test_onboarding_user(
 
     # Validate created areas
     assert len(area_registry.areas) == 3
+    assert sorted(area.name for area in area_registry.async_list_areas()) == [
+        "Bedroom",
+        "Kitchen",
+        "Living Room",
+    ]
+
+
+async def test_onboarding_user_missing_area_translations_uses_fallbacks(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+    area_registry: ar.AreaRegistry,
+) -> None:
+    """Test missing area translations fall back without blocking onboarding."""
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    client = await hass_client_no_auth()
+    with patch.object(
+        views,
+        "async_get_translations",
+        return_value={
+            "component.onboarding.area.bedroom": None,
+            "component.onboarding.area.kitchen": "",
+            "component.onboarding.area.living_room": {"invalid": "value"},
+        },
+    ):
+        resp = await client.post(
+            "/api/onboarding/users",
+            json={
+                "client_id": CLIENT_ID,
+                "name": "Test Name",
+                "username": "test-user",
+                "password": "test-pass",
+                "language": "it",
+            },
+        )
+
+    assert resp.status == HTTPStatus.OK
+    assert hass_storage[const.DOMAIN]["data"]["done"] == [
+        const.STEP_ANALYTICS,
+        const.STEP_USER,
+    ]
     assert sorted(area.name for area in area_registry.async_list_areas()) == [
         "Bedroom",
         "Kitchen",
@@ -643,35 +687,12 @@ async def test_onboarding_core_no_rpi_power(
     assert not rpi_power_state
 
 
-async def test_onboarding_core_ensures_analytics_loaded(
+async def test_onboarding_has_no_analytics_step_or_view(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
     hass_client: ClientSessionGenerator,
-    mock_default_integrations,
 ) -> None:
-    """Test finishing the core step ensures analytics is ready."""
-    mock_storage(hass_storage, {"done": [const.STEP_USER]})
-    assert "analytics" not in hass.config.components
-
-    assert await async_setup_component(hass, DOMAIN, {})
-    await hass.async_block_till_done()
-
-    client = await hass_client()
-    resp = await client.post("/api/onboarding/core_config")
-
-    assert resp.status == 200
-
-    await hass.async_block_till_done()
-    assert "analytics" in hass.config.components
-
-
-async def test_onboarding_analytics(
-    hass: HomeAssistant,
-    hass_storage: dict[str, Any],
-    hass_client: ClientSessionGenerator,
-    hass_admin_user: MockUser,
-) -> None:
-    """Test finishing analytics step."""
+    """Test analytics is absent from onboarding status and HTTP views."""
     mock_storage(hass_storage, {"done": [const.STEP_USER]})
 
     assert await async_setup_component(hass, DOMAIN, {})
@@ -679,14 +700,12 @@ async def test_onboarding_analytics(
 
     client = await hass_client()
 
-    resp = await client.post("/api/onboarding/analytics")
-
-    assert resp.status == 200
-
-    assert const.STEP_ANALYTICS in hass_storage[const.DOMAIN]["data"]["done"]
+    resp = await client.get("/api/onboarding")
+    assert resp.status == HTTPStatus.OK
+    assert "analytics" not in {step["step"] for step in await resp.json()}
 
     resp = await client.post("/api/onboarding/analytics")
-    assert resp.status == 403
+    assert resp.status == HTTPStatus.NOT_FOUND
 
 
 async def test_onboarding_installation_type(
@@ -972,12 +991,6 @@ async def test_complete_onboarding(
         json={"client_id": CLIENT_ID, "redirect_uri": CLIENT_REDIRECT_URI},
     )
     assert resp.status == 200
-    assert not onboarding.async_is_onboarded(hass)
-    listener_2.assert_not_called()
-
-    # Complete the analytics step
-    resp = await client.post("/api/onboarding/analytics")
-    assert resp.status == 200
     assert onboarding.async_is_onboarded(hass)
     listener_1.assert_not_called()  # Registered before the integration was setup
     listener_2.assert_called_once_with()
@@ -1096,7 +1109,9 @@ async def test_setup_platform_if_not_onboarded(
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
-    platform_mock.async_setup_views.assert_awaited_once_with(hass, {"done": []})
+    platform_mock.async_setup_views.assert_awaited_once_with(
+        hass, {"done": [const.STEP_ANALYTICS]}
+    )
 
 
 @pytest.mark.parametrize(

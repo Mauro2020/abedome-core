@@ -61,6 +61,11 @@ CONF_GITHUB_TOKEN = "github_token"
 
 DEV_ARTIFACTS_DIR = "development_artifacts"
 
+FRONTEND_REQUIREMENT_PREFIXES = (
+    "abedome-frontend==",
+    "home-assistant-frontend==",
+)
+
 
 DATA_PANELS: HassKey[dict[str, Panel]] = HassKey("frontend_panels")
 DATA_EXTRA_MODULE_URL: HassKey[UrlManager] = HassKey("frontend_extra_module_url")
@@ -835,8 +840,9 @@ async def async_get_version(hass: HomeAssistant) -> str | None:
     """Return the version of the frontend package."""
     integration = await async_get_integration(hass, DOMAIN)
     for req in integration.requirements:
-        if req.startswith("home-assistant-frontend=="):
-            return req.removeprefix("home-assistant-frontend==")
+        for prefix in FRONTEND_REQUIREMENT_PREFIXES:
+            if req.startswith(prefix):
+                return req.removeprefix(prefix)
     return None
 
 

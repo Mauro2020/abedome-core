@@ -13,6 +13,7 @@ from homeassistant.components.http import KEY_HASS
 from homeassistant.components.http.const import MAX_UNAUTHENTICATED_BODY_SIZE
 from homeassistant.components.http.data_validator import RequestDataValidator
 from homeassistant.components.onboarding import (
+    STEPS,
     BaseOnboardingView,
     NoAuthBaseOnboardingView,
 )
@@ -51,7 +52,7 @@ def with_backup_manager[_ViewT: BaseOnboardingView, **_P](
         **kwargs: _P.kwargs,
     ) -> web.Response:
         """Check admin and call function."""
-        if self._data["done"]:
+        if any(step in self._data["done"] for step in STEPS):
             raise HTTPUnauthorized
 
         manager = async_get_manager(request.app[KEY_HASS])

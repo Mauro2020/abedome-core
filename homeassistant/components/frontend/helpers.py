@@ -5,6 +5,7 @@ from typing import Any
 
 import probatio
 
+from homeassistant.brand import DISTRIBUTION_DISPLAY_NAME
 from homeassistant.const import EVENT_THEMES_UPDATED
 from homeassistant.core import HomeAssistant, async_get_hass, callback
 from homeassistant.helpers import config_validation as cv
@@ -158,15 +159,11 @@ MANIFEST_JSON = Manifest(
             }
         ],
         "lang": "en-US",
-        "name": "Home Assistant",
-        "short_name": "Home Assistant",
+        "name": DISTRIBUTION_DISPLAY_NAME,
+        "short_name": DISTRIBUTION_DISPLAY_NAME,
         "start_url": "/?homescreen=1",
         "id": "/?homescreen=1",
         "theme_color": DEFAULT_THEME_COLOR,
-        "prefer_related_applications": True,
-        "related_applications": [
-            {"platform": "play", "id": "io.homeassistant.companion.android"}
-        ],
     }
 )
 

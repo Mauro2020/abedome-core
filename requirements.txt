@@ -3,6 +3,7 @@
 -c homeassistant/package_constraints.txt
 
 # Home Assistant Core
+abedome-frontend @ https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-20261028.4/abedome_frontend-20261028.4-py3-none-any.whl#sha256=0822d3934c525795148d7d0927529f60cd227f5cf8f359efe019cc7d1b1815fa
 aiodns==4.0.4
 aiogithubapi==26.0.0
 aiohttp-asyncmdnsresolver==0.2.0

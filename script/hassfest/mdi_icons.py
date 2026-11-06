@@ -8,22 +8,28 @@ from hassfest.model import Config, Integration
 from hassfest.serializer import format_python_namespace
 
 _TARGET = "packages/pylint-home-assistant/pylint_home_assistant/generated/mdi_icons.py"
-_REQUIREMENT_PREFIX = "home-assistant-frontend=="
+_FRONTEND_DISTRIBUTIONS = ("abedome-frontend", "home-assistant-frontend")
+_REQUIREMENT_PREFIXES = tuple(
+    f"{distribution}==" for distribution in _FRONTEND_DISTRIBUTIONS
+)
 
 
 def _get_frontend_version() -> str | None:
-    """Get the installed home-assistant-frontend version."""
-    try:
-        return version("home-assistant-frontend")
-    except PackageNotFoundError:
-        return None
+    """Get the installed frontend package version."""
+    for distribution in _FRONTEND_DISTRIBUTIONS:
+        try:
+            return version(distribution)
+        except PackageNotFoundError:
+            continue
+    return None
 
 
 def _get_pinned_frontend_version(integrations: dict[str, Integration]) -> str | None:
-    """Get the home-assistant-frontend version pinned in the frontend manifest."""
+    """Get the frontend version pinned in the frontend manifest."""
     for requirement in integrations["frontend"].requirements:
-        if requirement.startswith(_REQUIREMENT_PREFIX):
-            return requirement.removeprefix(_REQUIREMENT_PREFIX)
+        for prefix in _REQUIREMENT_PREFIXES:
+            if requirement.startswith(prefix):
+                return requirement.removeprefix(prefix)
     return None
 
 
@@ -52,7 +58,7 @@ def validate(integrations: dict[str, Integration], config: Config) -> None:
     if not icons:
         config.add_error(
             "mdi_icons",
-            "Could not load MDI icons from home-assistant-frontend",
+            "Could not load MDI icons from the frontend package",
         )
         return
 

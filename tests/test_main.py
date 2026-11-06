@@ -13,6 +13,18 @@ _PYTHON_VERSION_ERROR = (
 )
 
 
+def test_cli_uses_distribution_description(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test the CLI advertises the downstream distribution."""
+    with (
+        patch("sys.argv", ["python", "--help"]),
+        pytest.raises(SystemExit, match="0"),
+    ):
+        main.get_arguments()
+    assert "ABEDOME OS" in capsys.readouterr().out
+
+
 @patch("sys.exit")
 @pytest.mark.parametrize(
     ("is_venv", "is_docker", "expected_exit_calls", "expected_stderr"),
