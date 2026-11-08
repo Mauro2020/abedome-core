@@ -1507,6 +1507,8 @@ jobs:
   coverage-full:
     name: Upload test coverage to Codecov (full suite)
     runs-on: ubuntu-26.04
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     permissions:
       contents: read
     needs:
@@ -1526,12 +1528,12 @@ jobs:
         with:
           pattern: coverage-*
       - name: Upload coverage to Codecov
-        if: needs.info.outputs.test_full_suite == 'true'
+        if: needs.info.outputs.test_full_suite == 'true' && env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           fail_ci_if_error: true
           flags: full-suite
-          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          token: ${{ env.CODECOV_TOKEN }}
 
   pytest-partial:
     name: Run tests Python ${{ matrix.python-version }} (${{ matrix.group }})
@@ -1660,6 +1662,8 @@ jobs:
     name: Upload test coverage to Codecov (partial suite)
     if: needs.info.outputs.skip_coverage != 'true'
     runs-on: ubuntu-26.04
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     permissions:
       contents: read
     timeout-minutes: 10
@@ -1676,11 +1680,11 @@ jobs:
         with:
           pattern: coverage-*
       - name: Upload coverage to Codecov
-        if: needs.info.outputs.test_full_suite == 'false'
+        if: needs.info.outputs.test_full_suite == 'false' && env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          token: ${{ env.CODECOV_TOKEN }}
 
   upload-test-results:
     name: Upload test results to Codecov
