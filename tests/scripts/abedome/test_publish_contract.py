@@ -146,6 +146,20 @@ def test_build_workflow_installs_the_local_core_test_runtime() -> None:
     assert "--editable packages/pytest-homeassistant" in workflow
 
 
+def test_core_ci_keeps_frontend_url_direct_for_pytest_package_extras() -> None:
+    """Ensure uv can resolve Core's pinned Frontend in the package test job."""
+    workflow = (ROOT / ".github/workflows/ci.yaml").read_text()
+    optional_helpers = workflow.split("- name: Test optional helpers and fixtures", 1)[
+        1
+    ]
+    optional_helpers = optional_helpers.split("\n  prepare-pytest-full:", 1)[0]
+
+    assert (
+        '              . \\\n              "${wheel}[bluetooth,infrared,radio-frequency]"'
+        in optional_helpers
+    )
+
+
 def test_publisher_packages_verified_backend_translations() -> None:
     """Ensure the image imports pinned locales and generates current English."""
     publish_workflow = (ROOT / ".github/workflows/publish-abedome-core.yml").read_text()

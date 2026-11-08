@@ -869,6 +869,7 @@ jobs:
         run: |
           for wheel in dist/*.whl; do
             uv pip install --python "${RUNNER_TEMP}/pytest-package-venv/bin/python" \
+              . \
               "${wheel}[bluetooth,infrared,radio-frequency]"
           done
           cd "${RUNNER_TEMP}"
