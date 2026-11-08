@@ -138,6 +138,14 @@ def test_build_workflow_covers_all_abedome_runtime_overlays() -> None:
     assert "orjson==3.13.0" in workflow
 
 
+def test_build_workflow_installs_the_local_core_test_runtime() -> None:
+    """Ensure the focused tests run with the Core 2026.11 test package."""
+    workflow = (ROOT / ".github/workflows/build-abedome-core.yml").read_text()
+
+    assert "--editable ." in workflow
+    assert "--editable packages/pytest-homeassistant" in workflow
+
+
 def test_publisher_packages_verified_backend_translations() -> None:
     """Ensure the image imports pinned locales and generates current English."""
     publish_workflow = (ROOT / ".github/workflows/publish-abedome-core.yml").read_text()
