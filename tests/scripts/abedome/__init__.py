@@ -1,1 +1,1 @@
-"""Tests for ABEDOME publishing helpers."""
+"""Tests for ABEDOME build helpers."""

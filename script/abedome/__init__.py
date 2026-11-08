@@ -1,1 +1,1 @@
-"""ABEDOME publishing helpers."""
+"""ABEDOME build helpers."""

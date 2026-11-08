@@ -7,15 +7,14 @@ from pathlib import Path
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
-EXPECTED_VERSION = "2026.9.1.dev7"
-EXPECTED_FRONTEND_VERSION = "2026.8.5.dev7"
-EXPECTED_FRONTEND_SHA256 = (
-    "886fabc0e7d924ce8a7f46a1dd3d624b707a9a17cd21934dc10736945cebd547"
-)
+EXPECTED_VERSION = "2026.11.0"
+EXPECTED_FRONTEND_VERSION = "20261028.4"
+EXPECTED_FRONTEND_ASSET = "abedome_frontend-20261028.4-py3-none-any.whl"
+EXPECTED_FRONTEND_SHA_VARIABLE = "ABEDOME_FRONTEND_20261028_4_SHA256"
 EXPECTED_TRANSLATIONS_SHA256 = (
-    "35005ce5491f64e48dfa0ca8436751474b8d8ec346a2406c2e2ba0f40427afcd"
+    "7ca5fbde9dea879ac7723949fc84347aac5182e6309c357b2e4973fd391b00f7"
 )
-EXPECTED_TRANSLATIONS_ASSET = "homeassistant-2026.8.1-py3-none-any.whl"
+EXPECTED_TRANSLATIONS_ASSET = "homeassistant-2026.11.0-py3-none-any.whl"
 
 
 def _core_version() -> str:
@@ -33,7 +32,7 @@ def _core_version() -> str:
     )
 
 
-def test_project_core_and_image_metadata_use_next_version() -> None:
+def test_project_core_and_image_metadata_use_stable_version() -> None:
     """Ensure Core and container metadata share the immutable version."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     dockerfile = (ROOT / "Dockerfile").read_text()
@@ -47,50 +46,117 @@ def test_project_core_and_image_metadata_use_next_version() -> None:
     assert 'org.opencontainers.image.revision="${BUILD_REVISION}"' in dockerfile
 
 
-def test_frontend_pin_is_consistent_across_core_and_workflows() -> None:
-    """Ensure every Core build path verifies the same Frontend artifact."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    dependency = next(
-        requirement
-        for requirement in project["project"]["dependencies"]
-        if requirement.startswith("abedome-frontend @ ")
-    )
-    expected_asset = f"abedome_frontend-{EXPECTED_FRONTEND_VERSION}-py3-none-any.whl"
-
-    assert EXPECTED_FRONTEND_VERSION in dependency
-    assert dependency.endswith(f"#sha256={EXPECTED_FRONTEND_SHA256}")
-
+def test_frontend_release_is_a_fail_closed_publication_gate() -> None:
+    """Ensure both build paths require the real released Frontend digest."""
     for workflow_name in (
         "build-abedome-core.yml",
         "publish-abedome-core.yml",
     ):
         workflow = (ROOT / ".github/workflows" / workflow_name).read_text()
         assert EXPECTED_FRONTEND_VERSION in workflow
-        assert EXPECTED_FRONTEND_SHA256 in workflow
-        assert expected_asset in workflow
+        assert EXPECTED_FRONTEND_ASSET in workflow
+        assert EXPECTED_FRONTEND_SHA_VARIABLE in workflow
+        assert '[[ ! "$FRONTEND_SHA256" =~ ^[0-9a-f]{64}$ ]]' in workflow
+        assert (
+            'echo "$FRONTEND_SHA256  $frontend_wheel" | sha256sum --check' in workflow
+        )
+
+    publish_workflow = (ROOT / ".github/workflows/publish-abedome-core.yml").read_text()
+    build_workflow = (ROOT / ".github/workflows/build-abedome-core.yml").read_text()
+    assert 'requirement.startswith("abedome-frontend @ ")' in publish_workflow
+    assert "assert dependency == expected_frontend_dependency" in publish_workflow
+    assert "Validate the pinned Frontend dependency" in build_workflow
+    assert 'if requirement.startswith("abedome-frontend @ ")' in build_workflow
+    assert "assert dependency == expected" in build_workflow
 
 
-def test_publisher_verifies_before_promoting_bootstrap_alias() -> None:
-    """Ensure publication verifies the image before moving the alias."""
+def test_publisher_verifies_candidate_before_creating_product_tags() -> None:
+    """Ensure only a verified candidate can receive product tags."""
     workflow = (ROOT / ".github/workflows/publish-abedome-core.yml").read_text()
 
-    immutable_check = workflow.index("Confirm immutable image digest and metadata")
-    alias_promotion = workflow.index(
-        "Promote verified image to landing-page bootstrap alias"
+    candidate_build = workflow.index(
+        "Build and publish the uniquely tagged candidate image"
     )
-    alias_check = workflow.index("Confirm landing-page alias digest and metadata")
+    candidate_check = workflow.index(
+        "Verify candidate digest, metadata, translations, and Frontend"
+    )
+    alias_promotion = workflow.index(
+        "Promote verified digest to immutable version and bootstrap alias"
+    )
+    alias_check = workflow.index("Confirm immutable version and landing-page alias")
 
     assert "group: publish-abedome-core\n" in workflow
+    assert "if: github.ref == 'refs/heads/abedome/develop'" in workflow
     assert "BUILD_VERSION=${{ inputs.version }}" in workflow
     assert "BUILD_REVISION=${{ github.sha }}" in workflow
-    assert "$IMAGE_NAME:landingpage" in workflow
-    assert immutable_check < alias_promotion < alias_check
-    assert workflow.count('index .Config.Labels "io.hass.version"') >= 2
+    assert "candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" in workflow
     assert (
-        workflow.count('index .Config.Labels "org.opencontainers.image.version"') >= 2
+        "tags: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.candidate_tag }}"
+        in workflow
+    )
+    assert "Verify the signed upstream base image" in workflow
+    assert "sigstore/cosign-installer@" in workflow
+    assert (
+        "certificate-identity-regexp https://github.com/home-assistant/docker/.*"
+        in workflow
     )
     assert (
-        workflow.count('index .Config.Labels "org.opencontainers.image.revision"') >= 2
+        "BASE_IMAGE: ghcr.io/home-assistant/amd64-homeassistant-base:2026.10.3"
+        in workflow
+    )
+    assert 'echo "ref=$BASE_IMAGE@$digest" >> "$GITHUB_OUTPUT"' in workflow
+    assert "BUILD_FROM=${{ steps.base.outputs.ref }}" in workflow
+    assert '--tag "$IMAGE_NAME:$EXPECTED_VERSION"' in workflow
+    assert "$IMAGE_NAME:landingpage" in workflow
+    assert candidate_build < candidate_check < alias_promotion < alias_check
+    assert '--tag "$IMAGE_NAME:$EXPECTED_VERSION"' not in workflow[:candidate_check]
+    assert 'version("abedome-frontend") == expected' in workflow
+    assert 'version("home-assistant-frontend")' in workflow
+    assert 'manifest["requirements"] == [f"abedome-frontend=={expected}"]' in workflow
+    assert 'index .Config.Labels "io.hass.version"' in workflow
+    assert 'index .Config.Labels "org.opencontainers.image.version"' in workflow
+    assert 'index .Config.Labels "org.opencontainers.image.revision"' in workflow
+
+
+def test_build_workflow_covers_all_abedome_runtime_overlays() -> None:
+    """Ensure changes to every downstream runtime overlay trigger validation."""
+    workflow = (ROOT / ".github/workflows/build-abedome-core.yml").read_text()
+
+    for path in (
+        "homeassistant/components/analytics/**",
+        "homeassistant/components/backup/**",
+        "homeassistant/components/cloud/**",
+        "homeassistant/components/hassio/**",
+        "homeassistant/components/labs/**",
+        "tests/components/analytics/**",
+        "tests/components/backup/**",
+        "tests/components/cloud/**",
+        "tests/components/hassio/**",
+        "tests/components/labs/**",
+    ):
+        assert f'      - "{path}"' in workflow
+    assert "orjson==3.13.0" in workflow
+
+
+def test_build_workflow_installs_the_local_core_test_runtime() -> None:
+    """Ensure the focused tests run with the Core 2026.11 test package."""
+    workflow = (ROOT / ".github/workflows/build-abedome-core.yml").read_text()
+
+    assert "--editable ." in workflow
+    assert "--editable packages/pytest-homeassistant" in workflow
+
+
+def test_core_ci_keeps_frontend_url_direct_for_pytest_package_extras() -> None:
+    """Ensure uv can resolve Core's pinned Frontend in the package test job."""
+    workflow = (ROOT / ".github/workflows/ci.yaml").read_text()
+    optional_helpers = workflow.split("- name: Test optional helpers and fixtures", 1)[
+        1
+    ]
+    optional_helpers = optional_helpers.split("\n  prepare-pytest-full:", 1)[0]
+
+    assert (
+        '              . \\\n              "${wheel}[bluetooth,infrared,radio-frequency]"'
+        in optional_helpers
     )
 
 
@@ -105,9 +171,11 @@ def test_publisher_packages_verified_backend_translations() -> None:
         "Import pinned upstream backend translations"
     )
     image_build = publish_workflow.index(
-        "Build and publish the immutable ABEDOME Core image"
+        "Build and publish the uniquely tagged candidate image"
     )
-    image_check = publish_workflow.index("Confirm immutable image digest and metadata")
+    image_check = publish_workflow.index(
+        "Verify candidate digest, metadata, translations, and Frontend"
+    )
 
     for workflow in (publish_workflow, build_workflow):
         assert EXPECTED_TRANSLATIONS_SHA256 in workflow

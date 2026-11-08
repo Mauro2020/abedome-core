@@ -11,6 +11,7 @@
     "file_upload",
     "http",
     "lovelace",
+    "map_tiles",
     "onboarding",
     "repairs",
     "search",
@@ -21,5 +22,5 @@
   "integration_type": "system",
   "preview_features": { "winter_mode": {} },
   "quality_scale": "internal",
-  "requirements": ["abedome-frontend==2026.8.5.dev7"]
+  "requirements": ["abedome-frontend==20261028.4"]
 }

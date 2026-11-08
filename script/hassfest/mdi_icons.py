@@ -4,19 +4,32 @@ from importlib.metadata import PackageNotFoundError, version
 from importlib.resources import files
 import json
 
-from .model import Config, Integration
-from .serializer import format_python_namespace
+from hassfest.model import Config, Integration
+from hassfest.serializer import format_python_namespace
 
-_TARGET = "pylint/plugins/pylint_home_assistant/generated/mdi_icons.py"
+_TARGET = "packages/pylint-home-assistant/pylint_home_assistant/generated/mdi_icons.py"
+_FRONTEND_DISTRIBUTIONS = ("abedome-frontend", "home-assistant-frontend")
+_REQUIREMENT_PREFIXES = tuple(
+    f"{distribution}==" for distribution in _FRONTEND_DISTRIBUTIONS
+)
 
 
 def _get_frontend_version() -> str | None:
-    """Get the installed ABEDOME-compatible frontend version."""
-    for package_name in ("abedome-frontend", "home-assistant-frontend"):
+    """Get the installed frontend package version."""
+    for distribution in _FRONTEND_DISTRIBUTIONS:
         try:
-            return version(package_name)
+            return version(distribution)
         except PackageNotFoundError:
             continue
+    return None
+
+
+def _get_pinned_frontend_version(integrations: dict[str, Integration]) -> str | None:
+    """Get the frontend version pinned in the frontend manifest."""
+    for requirement in integrations["frontend"].requirements:
+        for prefix in _REQUIREMENT_PREFIXES:
+            if requirement.startswith(prefix):
+                return requirement.removeprefix(prefix)
     return None
 
 
@@ -37,11 +50,15 @@ def validate(integrations: dict[str, Integration], config: Config) -> None:
     if frontend_version is None:
         return
 
+    pinned_version = _get_pinned_frontend_version(integrations)
+    if pinned_version is not None and pinned_version != frontend_version:
+        return
+
     icons = _load_mdi_icons()
     if not icons:
         config.add_error(
             "mdi_icons",
-            "Could not load MDI icons from the ABEDOME frontend package",
+            "Could not load MDI icons from the frontend package",
         )
         return
 

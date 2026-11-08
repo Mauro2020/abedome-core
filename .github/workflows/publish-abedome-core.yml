@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Immutable ABEDOME Core development version
+        description: Immutable ABEDOME Core version
         required: true
-        default: 2026.9.1.dev7
+        default: 2026.11.0
         type: string
 
 permissions: {}
@@ -17,10 +17,22 @@ concurrency:
   group: publish-abedome-core
   cancel-in-progress: false
 
+env:
+  BASE_IMAGE: ghcr.io/home-assistant/amd64-homeassistant-base:2026.10.3
+  CORE_VERSION: "2026.11.0"
+  FRONTEND_VERSION: "20261028.4"
+  FRONTEND_URL: >-
+    https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-20261028.4/abedome_frontend-20261028.4-py3-none-any.whl
+  FRONTEND_SHA256: ${{ vars.ABEDOME_FRONTEND_20261028_4_SHA256 }}
+  UPSTREAM_TRANSLATIONS_SHA256: 7ca5fbde9dea879ac7723949fc84347aac5182e6309c357b2e4973fd391b00f7
+  UPSTREAM_TRANSLATIONS_URL: >-
+    https://files.pythonhosted.org/packages/28/0a/10c900142dfff3c8bda64e75d0077519c4ee9a3e0f18aabc67c023ac079f/homeassistant-2026.11.0-py3-none-any.whl
+
 jobs:
   publish:
     name: Publish the x86-64 ABEDOME Core image
-    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/abedome/develop'
+    runs-on: ubuntu-26.04
     permissions:
       contents: read # To check out the repository
       packages: write # To inspect and publish the immutable image in GHCR
@@ -31,13 +43,24 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Python 3.14.10
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: ".python-version"
+          check-latest: true
+
+      - name: Require the released Frontend digest
+        shell: bash
+        run: |
+          if [[ ! "$FRONTEND_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Set repository variable ABEDOME_FRONTEND_20261028_4_SHA256 to the released Frontend wheel SHA-256"
+            exit 1
+          fi
+
       - name: Import pinned upstream backend translations
-        env:
-          UPSTREAM_TRANSLATIONS_SHA256: 35005ce5491f64e48dfa0ca8436751474b8d8ec346a2406c2e2ba0f40427afcd
-          UPSTREAM_TRANSLATIONS_URL: https://files.pythonhosted.org/packages/f9/77/1fa0722a0b8417069844a067a2d16aeaa28b2894f462b37553e421f29bfd/homeassistant-2026.8.1-py3-none-any.whl
         run: |
           set -euo pipefail
-          translation_wheel="${RUNNER_TEMP}/homeassistant-2026.8.1-py3-none-any.whl"
+          translation_wheel="${RUNNER_TEMP}/homeassistant-${CORE_VERSION}-py3-none-any.whl"
           curl --fail --location --retry 3 \
             --output "$translation_wheel" \
             "$UPSTREAM_TRANSLATIONS_URL"
@@ -48,10 +71,6 @@ jobs:
 
       - name: Validate the immutable product versions
         env:
-          EXPECTED_FRONTEND_SHA256: 886fabc0e7d924ce8a7f46a1dd3d624b707a9a17cd21934dc10736945cebd547
-          EXPECTED_FRONTEND_VERSION: 2026.8.5.dev7
-          EXPECTED_CORE_VERSION: 2026.9.1.dev7
-          EXPECTED_IMAGE_VERSION: 2026.9.1.dev7
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           python3 - <<'PY'
@@ -60,11 +79,10 @@ jobs:
           from pathlib import Path
           import tomllib
 
-          expected_core_version = os.environ["EXPECTED_CORE_VERSION"]
-          expected_image_version = os.environ["EXPECTED_IMAGE_VERSION"]
+          expected_core_version = os.environ["CORE_VERSION"]
           requested_version = os.environ["REQUESTED_VERSION"]
-          assert requested_version == expected_image_version, (
-              f"Only {expected_image_version} may be published; received {requested_version}"
+          assert requested_version == expected_core_version, (
+              f"Only {expected_core_version} may be published; received {requested_version}"
           )
 
           project = tomllib.loads(Path("pyproject.toml").read_text())
@@ -85,34 +103,58 @@ jobs:
               f"{values['PATCH_VERSION']}"
           )
           assert const_version == expected_core_version
-          assert expected_core_version == expected_image_version
 
-          frontend_version = os.environ["EXPECTED_FRONTEND_VERSION"]
-          frontend_sha256 = os.environ["EXPECTED_FRONTEND_SHA256"]
+          frontend_version = os.environ["FRONTEND_VERSION"]
+          frontend_sha256 = os.environ["FRONTEND_SHA256"]
           dependency = next(
               requirement
               for requirement in project["project"]["dependencies"]
               if requirement.startswith("abedome-frontend @ ")
           )
-          assert frontend_version in dependency
-          assert dependency.endswith(f"#sha256={frontend_sha256}")
+          expected_frontend_dependency = (
+              f"abedome-frontend @ {os.environ['FRONTEND_URL']}"
+              f"#sha256={frontend_sha256}"
+          )
+          assert frontend_version in expected_frontend_dependency
+          assert dependency == expected_frontend_dependency
           PY
 
       - name: Verify the published ABEDOME Frontend asset
-        env:
-          FRONTEND_SHA256: 886fabc0e7d924ce8a7f46a1dd3d624b707a9a17cd21934dc10736945cebd547
-          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev7/abedome_frontend-2026.8.5.dev7-py3-none-any.whl
         run: |
-          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev7-py3-none-any.whl "$FRONTEND_URL"
-          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev7-py3-none-any.whl" | sha256sum --check
+          set -euo pipefail
+          frontend_wheel="${RUNNER_TEMP}/abedome_frontend-${FRONTEND_VERSION}-py3-none-any.whl"
+          curl --fail --location --retry 3 --output "$frontend_wheel" "$FRONTEND_URL"
+          echo "$FRONTEND_SHA256  $frontend_wheel" | sha256sum --check
 
       - name: Derive the lowercase container image name
         id: image
         shell: bash
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/abedome-core" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/abedome-core" >> "$GITHUB_OUTPUT"
+          echo "candidate_tag=candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify the signed upstream base image
+        id: base
+        shell: bash
+        run: |
+          set -euo pipefail
+          verification="$(cosign verify --output json \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp https://github.com/home-assistant/docker/.* \
+            "$BASE_IMAGE")"
+          printf '%s\n' "$verification"
+          digest="$(jq -er '.[0].critical.image["docker-manifest-digest"]' <<< "$verification")"
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Cosign did not return a valid base image digest"
+            exit 1
+          fi
+          echo "ref=$BASE_IMAGE@$digest" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v3.7.1
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to the GitHub container registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -133,24 +175,25 @@ jobs:
             --package "$GHCR_PACKAGE" \
             --tag "$GHCR_TAG"
 
-      - name: Build and publish the immutable ABEDOME Core image
+      - name: Build and publish the uniquely tagged candidate image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.image.outputs.name }}:${{ inputs.version }}
+          tags: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.candidate_tag }}
           build-args: |
-            BUILD_FROM=ghcr.io/home-assistant/amd64-homeassistant-base:2026.07.0
+            BUILD_FROM=${{ steps.base.outputs.ref }}
             BUILD_VERSION=${{ inputs.version }}
             BUILD_REVISION=${{ github.sha }}
           provenance: true
           sbom: true
 
-      - name: Confirm immutable image digest and metadata
+      - name: Verify candidate digest, metadata, translations, and Frontend
         env:
+          CANDIDATE_TAG: ${{ steps.image.outputs.candidate_tag }}
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
           EXPECTED_REVISION: ${{ github.sha }}
           EXPECTED_VERSION: ${{ inputs.version }}
@@ -158,44 +201,72 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$EXPECTED_DIGEST"
-          immutable_image="$IMAGE_NAME:$EXPECTED_VERSION"
-          immutable_ref="$IMAGE_NAME@$EXPECTED_DIGEST"
-          inspection="$(docker buildx imagetools inspect "$immutable_image")"
+          candidate_image="$IMAGE_NAME:$CANDIDATE_TAG"
+          candidate_ref="$IMAGE_NAME@$EXPECTED_DIGEST"
+          inspection="$(docker buildx imagetools inspect "$candidate_image")"
           printf '%s\n' "$inspection"
           actual_digest="$(printf '%s\n' "$inspection" | awk '$1 == "Digest:" {print $2; exit}')"
           test -n "$actual_digest"
           if [[ "$actual_digest" != "$EXPECTED_DIGEST" ]]; then
-            echo "::error::Published digest $actual_digest does not match build digest $EXPECTED_DIGEST"
+            echo "::error::Candidate digest $actual_digest does not match build digest $EXPECTED_DIGEST"
             exit 1
           fi
 
-          docker pull "$immutable_ref"
-          hass_version="$(docker inspect "$immutable_ref" --format '{{ index .Config.Labels "io.hass.version" }}')"
-          image_version="$(docker inspect "$immutable_ref" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-          image_revision="$(docker inspect "$immutable_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          docker pull "$candidate_ref"
+          hass_version="$(docker inspect "$candidate_ref" --format '{{ index .Config.Labels "io.hass.version" }}')"
+          image_version="$(docker inspect "$candidate_ref" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          image_revision="$(docker inspect "$candidate_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
           if [[ "$hass_version" != "$EXPECTED_VERSION" || "$image_version" != "$EXPECTED_VERSION" ]]; then
-            echo "::error::Immutable image version labels do not match $EXPECTED_VERSION"
+            echo "::error::Candidate image version labels do not match $EXPECTED_VERSION"
             exit 1
           fi
           if [[ "$image_revision" != "$EXPECTED_REVISION" ]]; then
-            echo "::error::Immutable image revision $image_revision does not match $EXPECTED_REVISION"
+            echo "::error::Candidate image revision $image_revision does not match $EXPECTED_REVISION"
             exit 1
           fi
-          docker run --rm --entrypoint python3 "$immutable_ref" \
+          docker run --rm --entrypoint python3 "$candidate_ref" \
             /usr/src/homeassistant/script/abedome/import_backend_translations.py \
             verify --language en --language it
 
-      - name: Promote verified image to landing-page bootstrap alias
+          docker run --rm -i \
+            -e FRONTEND_VERSION \
+            --entrypoint python3 \
+            "$candidate_ref" - <<'PY'
+          import json
+          import os
+          from importlib.metadata import PackageNotFoundError, version
+          from pathlib import Path
+
+          expected = os.environ["FRONTEND_VERSION"]
+          assert version("abedome-frontend") == expected
+          try:
+              version("home-assistant-frontend")
+          except PackageNotFoundError:
+              pass
+          else:
+              raise AssertionError("upstream Frontend distribution is installed")
+
+          manifest = json.loads(
+              Path(
+                  "/usr/src/homeassistant/homeassistant/components/frontend/manifest.json"
+              ).read_text()
+          )
+          assert manifest["requirements"] == [f"abedome-frontend=={expected}"]
+          PY
+
+      - name: Promote verified digest to immutable version and bootstrap alias
         env:
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_VERSION: ${{ inputs.version }}
           IMAGE_NAME: ${{ steps.image.outputs.name }}
         run: |
           set -euo pipefail
           docker buildx imagetools create \
+            --tag "$IMAGE_NAME:$EXPECTED_VERSION" \
             --tag "$IMAGE_NAME:landingpage" \
             "$IMAGE_NAME@$EXPECTED_DIGEST"
 
-      - name: Confirm landing-page alias digest and metadata
+      - name: Confirm immutable version and landing-page alias
         env:
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
           EXPECTED_REVISION: ${{ github.sha }}
@@ -203,28 +274,30 @@ jobs:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
         run: |
           set -euo pipefail
-          alias_image="$IMAGE_NAME:landingpage"
-          inspection="$(docker buildx imagetools inspect "$alias_image")"
-          printf '%s\n' "$inspection"
-          actual_digest="$(printf '%s\n' "$inspection" | awk '$1 == "Digest:" {print $2; exit}')"
-          test -n "$actual_digest"
-          if [[ "$actual_digest" != "$EXPECTED_DIGEST" ]]; then
-            echo "::error::Bootstrap alias digest $actual_digest does not match verified digest $EXPECTED_DIGEST"
-            exit 1
-          fi
+          for tag in "$EXPECTED_VERSION" landingpage; do
+            image="$IMAGE_NAME:$tag"
+            inspection="$(docker buildx imagetools inspect "$image")"
+            printf '%s\n' "$inspection"
+            actual_digest="$(printf '%s\n' "$inspection" | awk '$1 == "Digest:" {print $2; exit}')"
+            test -n "$actual_digest"
+            if [[ "$actual_digest" != "$EXPECTED_DIGEST" ]]; then
+              echo "::error::$tag digest $actual_digest does not match verified digest $EXPECTED_DIGEST"
+              exit 1
+            fi
 
-          docker pull "$alias_image"
-          hass_version="$(docker inspect "$alias_image" --format '{{ index .Config.Labels "io.hass.version" }}')"
-          image_version="$(docker inspect "$alias_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-          image_revision="$(docker inspect "$alias_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-          if [[ "$hass_version" != "$EXPECTED_VERSION" || "$image_version" != "$EXPECTED_VERSION" ]]; then
-            echo "::error::Bootstrap alias version labels do not match $EXPECTED_VERSION"
-            exit 1
-          fi
-          if [[ "$image_revision" != "$EXPECTED_REVISION" ]]; then
-            echo "::error::Bootstrap alias revision $image_revision does not match $EXPECTED_REVISION"
-            exit 1
-          fi
+            docker pull "$image"
+            hass_version="$(docker inspect "$image" --format '{{ index .Config.Labels "io.hass.version" }}')"
+            image_version="$(docker inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+            image_revision="$(docker inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+            if [[ "$hass_version" != "$EXPECTED_VERSION" || "$image_version" != "$EXPECTED_VERSION" ]]; then
+              echo "::error::$tag version labels do not match $EXPECTED_VERSION"
+              exit 1
+            fi
+            if [[ "$image_revision" != "$EXPECTED_REVISION" ]]; then
+              echo "::error::$tag revision $image_revision does not match $EXPECTED_REVISION"
+              exit 1
+            fi
+          done
 
       - name: Summarize the product artifact
         env:
@@ -234,7 +307,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           {
-            echo "## ABEDOME Core development image"
+            echo "## ABEDOME Core image"
             echo
             echo "- Immutable image: \`$IMAGE_NAME:$VERSION\`"
             echo "- Bootstrap alias: \`$IMAGE_NAME:landingpage\`"
@@ -242,8 +315,8 @@ jobs:
             echo "- Architecture: \`linux/amd64\`"
             echo "- Core version: \`$VERSION\`"
             echo "- Source revision: \`$SOURCE_REVISION\`"
-            echo "- Frontend: \`abedome-frontend==2026.8.5.dev7\`"
+            echo "- Frontend: \`abedome-frontend==$FRONTEND_VERSION\`"
             echo
-            echo "The bootstrap alias points to the same verified digest as the immutable development image."
-            echo "This is a manual development publication; it does not modify stable, beta, or the ABEDOME OS update feed."
+            echo "The bootstrap alias points to the same verified digest as the immutable image."
+            echo "This manual publication does not modify the ABEDOME OS update feed."
           } >> "$GITHUB_STEP_SUMMARY"

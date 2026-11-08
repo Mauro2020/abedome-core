@@ -1,25 +1,16 @@
 """Test the onboarding views."""
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from dataclasses import replace
 from http import HTTPStatus
 import os
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+from aiohasupervisor import SupervisorBadRequestError
 import pytest
-
-from homeassistant.auth.providers.homeassistant import InvalidAuth
-from homeassistant.components import onboarding
-from homeassistant.components.onboarding import DOMAIN, const, views
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar
-from homeassistant.setup import async_set_domains_to_be_loaded, async_setup_component
-
-from . import mock_storage
-
-from tests.common import (
+from pytest_homeassistant.common import (
     CLIENT_ID,
     CLIENT_REDIRECT_URI,
     MockModule,
@@ -28,7 +19,25 @@ from tests.common import (
     mock_platform,
     register_auth_provider,
 )
-from tests.typing import ClientSessionGenerator
+from pytest_homeassistant.typing import ClientSessionGenerator
+
+from homeassistant import bootstrap
+from homeassistant.components import hassio, onboarding, person
+from homeassistant.components.http import KEY_HASS
+from homeassistant.components.http.const import MAX_UNAUTHENTICATED_BODY_SIZE
+from homeassistant.components.onboarding import DOMAIN, const, views
+from homeassistant.const import EVENT_COMPONENT_LOADED
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.setup import (
+    EventComponentLoaded,
+    async_set_domains_to_be_loaded,
+    async_setup_component,
+    async_wait_component,
+)
+
+from . import mock_storage
 
 
 @pytest.fixture(autouse=True)
@@ -90,14 +99,14 @@ def mock_default_integrations():
     with (
         patch("homeassistant.components.rpi_power.config_flow.new_under_voltage"),
         patch("homeassistant.components.rpi_power.new_under_voltage"),
-        patch("homeassistant.components.met.async_setup_entry", return_value=True),
+        patch("homeassistant.components.met.async_setup_entry", return_value=None),
         patch(
             "homeassistant.components.radio_browser.async_setup_entry",
-            return_value=True,
+            return_value=None,
         ),
         patch(
             "homeassistant.components.shopping_list.async_setup_entry",
-            return_value=True,
+            return_value=None,
         ),
     ):
         yield
@@ -190,15 +199,13 @@ async def test_onboarding_user(
     data = await resp.json()
     assert "auth_code" in data
 
-    await hass.async_block_till_done()
-
     users = await hass.auth.async_get_users()
     assert len(await hass.auth.async_get_users()) == cur_users + 1
     user = next((user for user in users if user.name == "Test Name"), None)
     assert user is not None
     assert len(user.credentials) == 1
     assert user.credentials[0].data["username"] == "test-user"
-    assert len(hass.data["person"][1].async_items()) == 1
+    assert len(hass.data[person.DATA_PERSON].storage_collection.async_items()) == 1
 
     # Validate refresh token 1
     resp = await client.post(
@@ -230,7 +237,7 @@ async def test_onboarding_user_missing_area_translations_uses_fallbacks(
     hass_client_no_auth: ClientSessionGenerator,
     area_registry: ar.AreaRegistry,
 ) -> None:
-    """Test missing translations cannot partially create an onboarding user."""
+    """Test missing area translations fall back without blocking onboarding."""
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
@@ -260,7 +267,6 @@ async def test_onboarding_user_missing_area_translations_uses_fallbacks(
         const.STEP_ANALYTICS,
         const.STEP_USER,
     ]
-    await hass.async_block_till_done()
     assert sorted(area.name for area in area_registry.async_list_areas()) == [
         "Bedroom",
         "Kitchen",
@@ -268,243 +274,30 @@ async def test_onboarding_user_missing_area_translations_uses_fallbacks(
     ]
 
 
-async def test_onboarding_user_rolls_back_and_retries_same_username(
+@pytest.mark.parametrize(
+    "url", ["/api/onboarding/users", "/api/onboarding/integration/wait"]
+)
+async def test_onboarding_body_too_large(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
     hass_client_no_auth: ClientSessionGenerator,
+    url: str,
 ) -> None:
-    """Test a failure after adding auth leaves no account state behind."""
+    """Test unauthenticated onboarding views reject large bodies."""
+    mock_storage(hass_storage, {"done": []})
+
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
-    provider = views._async_get_hass_provider(hass)
-    await provider.async_initialize()
-    original_user_count = len(await hass.auth.async_get_users())
-    client = await hass_client_no_auth()
-    payload = {
-        "client_id": CLIENT_ID,
-        "name": "Test Name",
-        "username": "test-user",
-        "password": "test-pass",
-        "language": "en",
-    }
-
-    with patch.object(
-        hass.auth, "async_link_user", side_effect=RuntimeError("link failed")
-    ):
-        resp = await client.post("/api/onboarding/users", json=payload)
-
-    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
-    assert len(await hass.auth.async_get_users()) == original_user_count
-    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
-    with pytest.raises(InvalidAuth):
-        await provider.async_validate_login("test-user", "test-pass")
-
-    resp = await client.post("/api/onboarding/users", json=payload)
-    assert resp.status == HTTPStatus.OK
-    await hass.async_block_till_done()
-    assert len(await hass.auth.async_get_users()) == original_user_count + 1
-    assert hass_storage[const.DOMAIN]["data"]["done"] == [
-        const.STEP_ANALYTICS,
-        const.STEP_USER,
-    ]
-
-
-async def test_onboarding_user_rolls_back_auth_save_failure(
-    hass: HomeAssistant,
-    hass_storage: dict[str, Any],
-    hass_client_no_auth: ClientSessionGenerator,
-) -> None:
-    """Test auth mutated in memory is removed when its atomic save fails."""
-    assert await async_setup_component(hass, DOMAIN, {})
-    await hass.async_block_till_done()
-
-    provider = views._async_get_hass_provider(hass)
-    await provider.async_initialize()
-    assert provider.data is not None
-    original_user_count = len(await hass.auth.async_get_users())
-    client = await hass_client_no_auth()
-    payload = {
-        "client_id": CLIENT_ID,
-        "name": "Test Name",
-        "username": "test-user",
-        "password": "test-pass",
-        "language": "en",
-    }
-
-    with patch.object(
-        provider.data, "async_save", side_effect=RuntimeError("save failed")
-    ):
-        resp = await client.post("/api/onboarding/users", json=payload)
-
-    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
-    assert len(await hass.auth.async_get_users()) == original_user_count
-    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
-    with pytest.raises(InvalidAuth):
-        await provider.async_validate_login("test-user", "test-pass")
-
-    resp = await client.post("/api/onboarding/users", json=payload)
-    assert resp.status == HTTPStatus.OK
-    await hass.async_block_till_done()
-
-
-async def test_onboarding_user_duplicate_auth_does_not_create_orphan(
-    hass: HomeAssistant,
-    hass_storage: dict[str, Any],
-    hass_client_no_auth: ClientSessionGenerator,
-) -> None:
-    """Test duplicate local auth is rejected before creating a Core user."""
-    assert await async_setup_component(hass, DOMAIN, {})
-    await hass.async_block_till_done()
-
-    provider = views._async_get_hass_provider(hass)
-    await provider.async_initialize()
-    await provider.async_add_auth("test-user", "existing-pass")
-    original_user_count = len(await hass.auth.async_get_users())
     client = await hass_client_no_auth()
 
     resp = await client.post(
-        "/api/onboarding/users",
-        json={
-            "client_id": CLIENT_ID,
-            "name": "Test Name",
-            "username": "test-user",
-            "password": "test-pass",
-            "language": "en",
-        },
+        url,
+        data=b"a" * (MAX_UNAUTHENTICATED_BODY_SIZE + 1),
+        headers={"Content-Type": "application/json"},
     )
 
-    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
-    assert len(await hass.auth.async_get_users()) == original_user_count
-    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
-    await provider.async_validate_login("test-user", "existing-pass")
-
-
-async def test_onboarding_user_rolls_back_auth_code_failure(
-    hass: HomeAssistant,
-    hass_storage: dict[str, Any],
-    hass_client_no_auth: ClientSessionGenerator,
-) -> None:
-    """Test auth-code failure leaves no user, local auth, or completed step."""
-    assert await async_setup_component(hass, DOMAIN, {})
-    await hass.async_block_till_done()
-
-    provider = views._async_get_hass_provider(hass)
-    await provider.async_initialize()
-    original_user_count = len(await hass.auth.async_get_users())
-    client = await hass_client_no_auth()
-    payload = {
-        "client_id": CLIENT_ID,
-        "name": "Test Name",
-        "username": "test-user",
-        "password": "test-pass",
-        "language": "en",
-    }
-
-    with patch(
-        "homeassistant.components.auth.create_auth_code",
-        side_effect=RuntimeError("auth code failed"),
-    ):
-        resp = await client.post("/api/onboarding/users", json=payload)
-
-    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
-    assert len(await hass.auth.async_get_users()) == original_user_count
-    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
-    with pytest.raises(InvalidAuth):
-        await provider.async_validate_login("test-user", "test-pass")
-
-    resp = await client.post("/api/onboarding/users", json=payload)
-    assert resp.status == HTTPStatus.OK
-    await hass.async_block_till_done()
-
-
-async def test_onboarding_user_rolls_back_mark_done_save_failure(
-    hass: HomeAssistant,
-    hass_storage: dict[str, Any],
-    hass_client_no_auth: ClientSessionGenerator,
-) -> None:
-    """Test a failed step save rolls back and permits the same username."""
-    assert await async_setup_component(hass, DOMAIN, {})
-    await hass.async_block_till_done()
-
-    provider = views._async_get_hass_provider(hass)
-    await provider.async_initialize()
-    original_user_count = len(await hass.auth.async_get_users())
-    client = await hass_client_no_auth()
-    payload = {
-        "client_id": CLIENT_ID,
-        "name": "Test Name",
-        "username": "test-user",
-        "password": "test-pass",
-        "language": "en",
-    }
-
-    with (
-        patch.object(
-            onboarding.OnboardingStorage,
-            "async_save",
-            new=AsyncMock(side_effect=[RuntimeError("step save failed"), None]),
-        ),
-        patch("homeassistant.components.auth.create_auth_code") as mock_auth_code,
-    ):
-        resp = await client.post("/api/onboarding/users", json=payload)
-
-    assert resp.status == HTTPStatus.INTERNAL_SERVER_ERROR
-    mock_auth_code.assert_not_called()
-    assert len(await hass.auth.async_get_users()) == original_user_count
-    assert hass_storage[const.DOMAIN]["data"]["done"] == [const.STEP_ANALYTICS]
-    with pytest.raises(InvalidAuth):
-        await provider.async_validate_login("test-user", "test-pass")
-
-    resp = await client.post("/api/onboarding/users", json=payload)
-    assert resp.status == HTTPStatus.OK
-    await hass.async_block_till_done()
-
-
-async def test_onboarding_user_auxiliary_failures_are_best_effort(
-    hass: HomeAssistant,
-    hass_storage: dict[str, Any],
-    hass_client_no_auth: ClientSessionGenerator,
-    area_registry: ar.AreaRegistry,
-) -> None:
-    """Test person and area failures cannot undo committed onboarding."""
-    assert await async_setup_component(hass, "person", {})
-    assert await async_setup_component(hass, DOMAIN, {})
-    await hass.async_block_till_done()
-
-    client = await hass_client_no_auth()
-    with (
-        patch.object(
-            views.person,
-            "async_create_person",
-            side_effect=RuntimeError("person failed"),
-        ) as mock_create_person,
-        patch.object(
-            ar.AreaRegistry,
-            "async_create",
-            side_effect=RuntimeError("area failed"),
-        ) as mock_create_area,
-    ):
-        resp = await client.post(
-            "/api/onboarding/users",
-            json={
-                "client_id": CLIENT_ID,
-                "name": "Test Name",
-                "username": "test-user",
-                "password": "test-pass",
-                "language": "en",
-            },
-        )
-        assert resp.status == HTTPStatus.OK
-        await hass.async_block_till_done()
-
-    assert hass_storage[const.DOMAIN]["data"]["done"] == [
-        const.STEP_ANALYTICS,
-        const.STEP_USER,
-    ]
-    mock_create_person.assert_awaited_once()
-    assert mock_create_area.call_count == len(const.DEFAULT_AREAS)
-    assert not area_registry.areas
+    assert resp.status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 
 
 async def test_onboarding_user_invalid_name(
@@ -531,6 +324,57 @@ async def test_onboarding_user_invalid_name(
     )
 
     assert resp.status == 400
+
+
+@pytest.mark.parametrize(
+    ("username", "expected_code"),
+    [
+        pytest.param("Test-User", "username_not_normalized", id="uppercase"),
+        pytest.param("test-user ", "username_not_normalized", id="whitespace"),
+        pytest.param("existing-user", "username_already_exists", id="duplicate"),
+    ],
+)
+async def test_onboarding_user_invalid_username(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+    username: str,
+    expected_code: str,
+) -> None:
+    """Test a rejected username does not leave an orphaned user behind."""
+    mock_storage(hass_storage, {"done": []})
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    provider = views._async_get_hass_provider(hass)
+    await provider.async_initialize()
+    await provider.async_add_auth("existing-user", "test-pass")
+
+    cur_users = len(await hass.auth.async_get_users())
+    client = await hass_client_no_auth()
+
+    resp = await client.post(
+        "/api/onboarding/users",
+        json={
+            "client_id": CLIENT_ID,
+            "name": "Test Name",
+            "username": username,
+            "password": "test-pass",
+            "language": "en",
+        },
+    )
+
+    assert resp.status == HTTPStatus.BAD_REQUEST
+    body = await resp.json()
+    assert body["code"] == expected_code
+    # The rejected username is echoed back so the frontend can explain the failure
+    assert username in body["message"]
+
+    # The step stays open so onboarding can be retried with another username,
+    # and no user may be left behind from the rejected attempt.
+    assert const.STEP_USER not in hass_storage[const.DOMAIN]["data"]["done"]
+    assert len(await hass.auth.async_get_users()) == cur_users
 
 
 async def test_onboarding_user_race(
@@ -695,6 +539,45 @@ async def test_onboarding_integration_requires_auth(
     assert resp.status == 401
 
 
+async def test_onboarding_installation_type_client_disconnect(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Test a client disconnect does not break the pending hassio setup.
+
+    The HTTP runner is created with handler_cancellation=True, so a disconnect
+    cancels the request handler. An unshielded wait would cancel the setup
+    future shared with every other waiter and with hassio setup itself.
+    """
+    mock_storage(hass_storage, {"done": []})
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    async_set_domains_to_be_loaded(hass, {"hassio"})
+
+    wait_entered, instrumented_wait = _instrumented_wait_component()
+
+    view = views.InstallationTypeOnboardingView(hass.data[DOMAIN].steps)
+    request = Mock()
+    request.app = {KEY_HASS: hass}
+
+    with patch(
+        "homeassistant.components.onboarding.views.async_wait_component",
+        instrumented_wait,
+    ):
+        task = hass.async_create_task(view.get(request))
+        await wait_entered.wait()
+
+        # The client goes away while the request waits for hassio
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # Setting up hassio must still resolve the shared setup future
+        assert not await async_setup_component(hass, "hassio", {})
+
+
 async def test_onboarding_core_sets_up_met(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
@@ -848,6 +731,191 @@ async def test_onboarding_installation_type(
 
         resp_content = await resp.json()
         assert resp_content["installation_type"] == "Home Assistant Core"
+
+
+def _instrumented_wait_component() -> tuple[
+    asyncio.Event, Callable[[HomeAssistant, str], Coroutine[Any, Any, bool]]
+]:
+    """Wrap async_wait_component with an event set when the wait is entered."""
+    entered = asyncio.Event()
+
+    async def _wait_component(hass: HomeAssistant, domain: str) -> bool:
+        entered.set()
+        return await async_wait_component(hass, domain)
+
+    return entered, _wait_component
+
+
+async def test_onboarding_installation_type_waits_for_hassio(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client: ClientSessionGenerator,
+) -> None:
+    """Test installation type waits for hassio on Supervisor installations.
+
+    The HTTP server serves onboarding before hassio is loaded, so answering
+    right away would misdetect the installation type.
+    """
+    mock_storage(hass_storage, {"done": []})
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    async_set_domains_to_be_loaded(hass, {"hassio"})
+
+    wait_entered, instrumented_wait = _instrumented_wait_component()
+
+    with (
+        patch(
+            "homeassistant.components.onboarding.views.async_wait_component",
+            instrumented_wait,
+        ),
+        patch(
+            "homeassistant.components.onboarding.views.async_get_system_info",
+            return_value={"installation_type": "Home Assistant OS"},
+        ),
+    ):
+        req_task = asyncio.create_task(client.get("/api/onboarding/installation_type"))
+        await wait_entered.wait()
+        # The response must not be produced while hassio is still pending
+        assert not req_task.done()
+
+        # hassio setup fails fast as the test provides no supervisor to talk
+        # to, which is enough to resolve the wait
+        assert not await async_setup_component(hass, "hassio", {})
+        resp = await req_task
+
+    assert resp.status == 200
+    resp_content = await resp.json()
+    assert resp_content["installation_type"] == "Home Assistant OS"
+
+
+async def test_onboarding_installation_type_done_while_waiting(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client: ClientSessionGenerator,
+) -> None:
+    """Test installation type is rejected if onboarding finishes while waiting."""
+    mock_storage(hass_storage, {"done": []})
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    async_set_domains_to_be_loaded(hass, {"hassio"})
+
+    wait_entered, instrumented_wait = _instrumented_wait_component()
+
+    with patch(
+        "homeassistant.components.onboarding.views.async_wait_component",
+        instrumented_wait,
+    ):
+        req_task = asyncio.create_task(client.get("/api/onboarding/installation_type"))
+        await wait_entered.wait()
+
+        # Onboarding completes while the request is waiting for hassio
+        hass.data[DOMAIN].steps["done"].append(const.STEP_USER)
+        assert not await async_setup_component(hass, "hassio", {})
+        resp = await req_task
+
+    assert resp.status == 401
+
+
+async def test_onboarding_installation_type_no_hassio(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client: ClientSessionGenerator,
+) -> None:
+    """Test installation type does not wait when hassio is not pending setup."""
+    mock_storage(hass_storage, {"done": []})
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    client = await hass_client()
+
+    with patch(
+        "homeassistant.components.onboarding.views.async_get_system_info",
+        return_value={"installation_type": "Home Assistant Container"},
+    ):
+        resp = await client.get("/api/onboarding/installation_type")
+
+    assert resp.status == 200
+    resp_content = await resp.json()
+    assert resp_content["installation_type"] == "Home Assistant Container"
+
+
+@pytest.mark.usefixtures("mock_supervisor", "homeassistant_info")
+async def test_onboarding_installation_type_during_bootstrap(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    hass_client_no_auth: ClientSessionGenerator,
+    supervisor_client: AsyncMock,
+) -> None:
+    """Test installation type detection with the real bootstrap setup order.
+
+    Bootstrap serves onboarding as a frontend dependency in stage 0, while
+    hassio, added to the domains to set up from the SUPERVISOR environment
+    variable, only loads in stage 1. The installation type must not be
+    reported before hassio is set up.
+    """
+    mock_storage(hass_storage, {"done": []})
+    # No Supervisor update is available during the onboarding update check
+    supervisor_client.supervisor.update.side_effect = SupervisorBadRequestError
+
+    onboarding_loaded = asyncio.Event()
+
+    @callback
+    def _onboarding_loaded(event: Event[EventComponentLoaded]) -> None:
+        onboarding_loaded.set()
+
+    @callback
+    def _filter_onboarding(event_data: EventComponentLoaded) -> bool:
+        return event_data["component"] == DOMAIN
+
+    hass.bus.async_listen(
+        EVENT_COMPONENT_LOADED, _onboarding_loaded, event_filter=_filter_onboarding
+    )
+
+    hassio_setup_gate = asyncio.Event()
+    real_hassio_setup = hassio.async_setup
+
+    async def gated_hassio_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+        await hassio_setup_gate.wait()
+        return await real_hassio_setup(hass, config)
+
+    wait_entered, instrumented_wait = _instrumented_wait_component()
+
+    with (
+        patch("homeassistant.bootstrap.DEFAULT_INTEGRATIONS", set()),
+        patch("homeassistant.components.hassio.async_setup", gated_hassio_setup),
+        patch(
+            "homeassistant.components.onboarding.views.async_wait_component",
+            instrumented_wait,
+        ),
+    ):
+        bootstrap_task = asyncio.create_task(
+            bootstrap._async_set_up_integrations(hass, {"frontend": {}})
+        )
+        await onboarding_loaded.wait()
+        assert "hassio" not in hass.config.components
+
+        client = await hass_client_no_auth()
+        req_task = asyncio.create_task(client.get("/api/onboarding/installation_type"))
+        await wait_entered.wait()
+        # The response must not be produced while hassio is still pending
+        assert not req_task.done()
+
+        hassio_setup_gate.set()
+        resp = await req_task
+        await bootstrap_task
+
+    assert resp.status == 200
+    resp_content = await resp.json()
+    assert resp_content["installation_type"] == "Home Assistant OS"
 
 
 @pytest.mark.parametrize(
@@ -1042,7 +1110,7 @@ async def test_setup_platform_if_not_onboarded(
     await hass.async_block_till_done()
 
     platform_mock.async_setup_views.assert_awaited_once_with(
-        hass, {"done": [onboarding.STEP_ANALYTICS]}
+        hass, {"done": [const.STEP_ANALYTICS]}
     )
 
 

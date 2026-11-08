@@ -76,9 +76,7 @@ def test_imports_only_compatible_non_english_translations(tmp_path: Path) -> Non
             ),
         ],
     )
-
     summary = import_translations(wheel, digest, components_root)
-
     assert summary.files == 1
     assert summary.components == 1
     assert summary.languages == frozenset({"it"})
@@ -102,7 +100,6 @@ def test_rejects_wheel_digest_mismatch(tmp_path: Path) -> None:
     _write_component(components_root, "onboarding", ONBOARDING_STRINGS)
     wheel = tmp_path / "homeassistant.whl"
     _write_wheel(wheel, [])
-
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         import_translations(wheel, "0" * 64, components_root)
 
@@ -124,7 +121,6 @@ def test_rejects_unsafe_wheel_paths(tmp_path: Path, member: str, error: str) -> 
     _write_component(components_root, "onboarding", ONBOARDING_STRINGS)
     wheel = tmp_path / "homeassistant.whl"
     digest = _write_wheel(wheel, [(member, ONBOARDING_STRINGS)])
-
     with pytest.raises(ValueError, match=error):
         import_translations(wheel, digest, components_root)
 
@@ -138,7 +134,6 @@ def test_rejects_wheel_symlink(tmp_path: Path) -> None:
     member.create_system = 3
     member.external_attr = (stat.S_IFLNK | 0o777) << 16
     digest = _write_wheel(wheel, [(member, ONBOARDING_STRINGS)])
-
     with pytest.raises(ValueError, match="symlink"):
         import_translations(wheel, digest, components_root)
 
@@ -154,7 +149,6 @@ def test_rejects_duplicate_translation_member(tmp_path: Path) -> None:
             wheel,
             [(member, ONBOARDING_STRINGS), (member, ONBOARDING_STRINGS)],
         )
-
     with pytest.raises(ValueError, match="Duplicate wheel member"):
         import_translations(wheel, digest, components_root)
 
@@ -168,7 +162,6 @@ def test_rejects_non_object_translation_json(tmp_path: Path) -> None:
         wheel,
         [("homeassistant/components/onboarding/translations/it.json", [])],
     )
-
     with pytest.raises(TypeError, match="Expected a JSON object"):
         import_translations(wheel, digest, components_root)
 
@@ -197,10 +190,8 @@ def test_late_archive_error_preserves_existing_translations(tmp_path: Path) -> N
             ),
         ],
     )
-
     with pytest.raises(ValueError, match="Invalid JSON"):
         import_translations(wheel, digest, components_root)
-
     assert json.loads((translations_root / "it.json").read_text()) == existing_italian
     assert not (translations_root / "fr.json").exists()
 
@@ -209,7 +200,6 @@ def test_verify_rejects_missing_language(tmp_path: Path) -> None:
     """Test verification fails when a requested language is not packaged."""
     components_root = tmp_path / "homeassistant" / "components"
     _write_component(components_root, "onboarding", ONBOARDING_STRINGS)
-
     with pytest.raises(ValueError, match="Missing onboarding translation file for it"):
         verify_onboarding_translations(components_root, ["it"])
 
@@ -223,6 +213,5 @@ def test_verify_rejects_missing_required_keys(tmp_path: Path) -> None:
     (translations_root / "it.json").write_text(
         json.dumps({"area": {"living_room": "Soggiorno"}}), encoding="utf-8"
     )
-
     with pytest.raises(ValueError, match="bedroom, kitchen"):
         verify_onboarding_translations(components_root, ["it"])

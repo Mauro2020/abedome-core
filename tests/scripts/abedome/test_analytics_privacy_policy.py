@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from aiohasupervisor import SupervisorError
 import pytest
+from pytest_homeassistant.common import async_fire_time_changed
+from pytest_homeassistant.test_util.aiohttp import AiohttpClientMocker
+from pytest_homeassistant.typing import WebSocketGenerator
 
 from homeassistant import brand
 from homeassistant.components import analytics as analytics_component
@@ -15,10 +18,6 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-
-from tests.common import async_fire_time_changed
-from tests.test_util.aiohttp import AiohttpClientMocker
-from tests.typing import WebSocketGenerator
 
 CUSTOM_SNAPSHOT_URL = "https://analytics-disabled.example.com"
 
@@ -69,6 +68,7 @@ async def test_legacy_storage_is_sanitized_and_never_submitted(
         "homeassistant.components.analytics.analytics.is_hassio", return_value=False
     ):
         await analytics.load()
+        await analytics.async_schedule()
 
     await analytics.send_analytics()
     await analytics.send_snapshot()
@@ -91,6 +91,8 @@ async def test_legacy_storage_is_sanitized_and_never_submitted(
     }
     basic_cancel.assert_called_once_with()
     snapshot_cancel.assert_called_once_with()
+    assert analytics._basic_scheduled is None
+    assert analytics._snapshot_scheduled is None
     assert aioclient_mock.mock_calls == []
 
 

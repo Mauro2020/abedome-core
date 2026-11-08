@@ -3,14 +3,14 @@
 from typing import Any
 from unittest.mock import Mock, patch
 
+from pytest_homeassistant.common import MockUser
+
 from homeassistant.components import onboarding
 from homeassistant.components.onboarding import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
 from . import mock_storage
-
-from tests.common import MockUser
 
 # Temporarily: if auth not active, always set onboarded=True
 
@@ -125,27 +125,3 @@ async def test_migration(hass: HomeAssistant, hass_storage: dict[str, Any]) -> N
     done = hass_storage[onboarding.STORAGE_KEY]["data"]["done"]
     assert set(onboarding.STEPS).issubset(done)
     assert onboarding.STEP_ANALYTICS in done
-
-
-async def test_legacy_analytics_step_does_not_block_onboarding(
-    hass: HomeAssistant, hass_storage: dict[str, Any]
-) -> None:
-    """Test the hidden legacy analytics marker remains rollback compatible."""
-    done = [
-        onboarding.STEP_USER,
-        onboarding.STEP_CORE_CONFIG,
-        onboarding.STEP_ANALYTICS,
-        onboarding.STEP_INTEGRATION,
-    ]
-    hass_storage[onboarding.STORAGE_KEY] = {
-        "version": onboarding.STORAGE_VERSION,
-        "data": {"done": done},
-    }
-
-    assert await async_setup_component(hass, DOMAIN, {})
-
-    assert onboarding.async_is_onboarded(hass)
-    assert hass_storage[onboarding.STORAGE_KEY] == {
-        "version": onboarding.STORAGE_VERSION,
-        "data": {"done": done},
-    }

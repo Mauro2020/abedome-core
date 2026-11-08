@@ -43,7 +43,8 @@ class _Opener:
 
     def __call__(self, request: object, *, timeout: int) -> _Response:
         self.requests.append(request)
-        self.assert_timeout(timeout)
+        if timeout != 30:
+            raise AssertionError(f"unexpected timeout: {timeout}")
         if not self._pages_or_errors:
             raise AssertionError("unexpected extra request")
         item = self._pages_or_errors.pop(0)
@@ -53,13 +54,8 @@ class _Opener:
             return item
         return _Response(item)
 
-    @staticmethod
-    def assert_timeout(timeout: int) -> None:
-        if timeout != 30:
-            raise AssertionError(f"unexpected timeout: {timeout}")
 
-
-def _call(opener: _Opener, tag: str = "2026.9.0.dev2") -> bool:
+def _call(opener: _Opener, tag: str = "2026.11.0") -> bool:
     return tag_exists(
         owner="Mauro2020",
         package="abedome-core",
@@ -71,20 +67,17 @@ def _call(opener: _Opener, tag: str = "2026.9.0.dev2") -> bool:
 
 def test_exact_existing_tag_is_refused() -> None:
     """Refuse an exact existing tag."""
-    assert _call(_Opener([_version("2026.9.0.dev2")]))
+    assert _call(_Opener([_version("2026.11.0")]))
 
 
 def test_similar_tag_does_not_match() -> None:
     """Do not confuse a similar tag with an exact match."""
-    assert not _call(_Opener([_version("2026.9.0.dev20")]))
+    assert not _call(_Opener([_version("2026.11.0.1")]))
 
 
 def test_all_pages_are_scanned() -> None:
     """Scan every returned page for an exact match."""
-    first_page = [_version() for _ in range(100)]
-    second_page = [_version("2026.9.0.dev2")]
-    opener = _Opener(first_page, second_page)
-
+    opener = _Opener([_version() for _ in range(100)], [_version("2026.11.0")])
     assert _call(opener)
     assert len(opener.requests) == 2
 
@@ -132,7 +125,7 @@ def test_missing_token_fails_before_network() -> None:
         tag_exists(
             owner="Mauro2020",
             package="abedome-core",
-            tag="2026.9.0.dev2",
+            tag="2026.11.0",
             token="",
             opener=opener,
         )

@@ -32,7 +32,6 @@ def _validate_identifier(value: str, label: str) -> str:
 
 def validate_tag(tag: str) -> str:
     """Validate a tag using Docker's portable tag grammar."""
-
     tag = _validate_identifier(tag, "tag")
     if TAG_PATTERN.fullmatch(tag) is None:
         raise GhcrTagCheckError(f"invalid container tag: {tag!r}")
@@ -54,7 +53,6 @@ def _read_page(
             "User-Agent": "abedome-core-immutable-tag-guard",
         },
     )
-
     try:
         with opener(request, timeout=30) as response:
             status = getattr(response, "status", 200)
@@ -76,7 +74,6 @@ def _read_page(
         payload = json.loads(body)
     except (UnicodeDecodeError, json.JSONDecodeError) as err:
         raise GhcrTagCheckError("GitHub Packages returned invalid JSON") from err
-
     if not isinstance(payload, list):
         raise GhcrTagCheckError(
             "GitHub Packages returned an unexpected response schema"
@@ -102,18 +99,15 @@ def tag_exists(
     opener: Callable[..., Any] = urlopen,
 ) -> bool:
     """Return whether ``tag`` exists, raising unless absence is proven."""
-
     owner = _validate_identifier(owner, "owner")
     package = _validate_identifier(package, "package")
     tag = validate_tag(tag)
     token = _validate_identifier(token, "token")
     api_url = _validate_identifier(api_url, "API URL").rstrip("/")
-
     path = (
         f"{api_url}/users/{quote(owner, safe='')}/packages/container/"
         f"{quote(package, safe='')}/versions"
     )
-
     for page in range(1, MAX_PAGES + 1):
         query = urlencode({"state": "active", "per_page": PAGE_SIZE, "page": page})
         versions = _read_page(
@@ -121,7 +115,6 @@ def tag_exists(
             token=token,
             opener=opener,
         )
-
         for version in versions:
             metadata = version.get("metadata")
             if not isinstance(metadata, dict):
@@ -142,16 +135,13 @@ def tag_exists(
                 )
             if tag in tags:
                 return True
-
         if len(versions) < PAGE_SIZE:
             return False
-
     raise GhcrTagCheckError(f"GitHub Packages pagination exceeded {MAX_PAGES} pages")
 
 
 def main() -> int:
     """Run the immutable-tag guard."""
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--owner", required=True)
     parser.add_argument("--package", required=True)
@@ -161,9 +151,7 @@ def main() -> int:
         default=os.environ.get("GITHUB_API_URL", "https://api.github.com"),
     )
     args = parser.parse_args()
-
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
-
     try:
         exists = tag_exists(
             owner=args.owner,
@@ -175,14 +163,12 @@ def main() -> int:
     except GhcrTagCheckError as err:
         print(f"::error::Immutable GHCR tag check failed: {err}", file=sys.stderr)
         return 2
-
     if exists:
         print(
             f"::error::Refusing to overwrite existing GHCR tag: {args.tag}",
             file=sys.stderr,
         )
         return 3
-
     print(f"GHCR tag is available for first publication: {args.tag}")
     return 0
 

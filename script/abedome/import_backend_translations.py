@@ -48,7 +48,6 @@ def _load_json_object(data: bytes, source: str) -> dict[str, Any]:
         value = json.loads(data)
     except (UnicodeDecodeError, json.JSONDecodeError) as err:
         raise ValueError(f"Invalid JSON in {source}") from err
-
     if not isinstance(value, dict):
         raise TypeError(f"Expected a JSON object in {source}")
     return value
@@ -71,7 +70,6 @@ def _filter_compatible(
     for key, value in translations.items():
         if key not in strings:
             continue
-
         current_value = strings[key]
         if isinstance(current_value, dict):
             if not isinstance(value, dict):
@@ -80,7 +78,6 @@ def _filter_compatible(
                 filtered[key] = nested
         elif isinstance(current_value, str) and isinstance(value, str):
             filtered[key] = value
-
     return filtered
 
 
@@ -92,7 +89,6 @@ def _validate_member(info: zipfile.ZipInfo, seen_names: set[str]) -> None:
     if info.filename in seen_names:
         raise ValueError(f"Duplicate wheel member: {info.filename}")
     seen_names.add(info.filename)
-
     mode = (info.external_attr >> 16) & 0xFFFF
     if stat.S_ISLNK(mode):
         raise ValueError(f"Wheel symlink is not allowed: {info.filename}")
@@ -108,7 +104,6 @@ def import_translations(
     """Import compatible non-English translation JSON files from a wheel."""
     if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
         raise ValueError("Expected SHA-256 must be 64 lowercase hexadecimal characters")
-
     actual_sha256 = _sha256(wheel)
     if actual_sha256 != expected_sha256:
         raise ValueError(
@@ -120,7 +115,6 @@ def import_translations(
     languages: set[str] = set()
     seen_names: set[str] = set()
     seen_translations: set[tuple[str, str]] = set()
-
     with (
         tempfile.TemporaryDirectory(
             prefix=".abedome-translations-", dir=components_root.parent
@@ -134,7 +128,6 @@ def import_translations(
                 continue
             if info.file_size > MAX_TRANSLATION_FILE_SIZE:
                 raise ValueError(f"Translation file is too large: {info.filename}")
-
             domain = match.group("domain")
             language = match.group("language")
             identity = (domain, language)
@@ -143,23 +136,18 @@ def import_translations(
                     f"Duplicate translation for component {domain}, language {language}"
                 )
             seen_translations.add(identity)
-
-            # English is generated from the current fork source in the Docker build.
             if language == "en":
                 continue
-
             component_root = components_root / domain
             strings_path = component_root / "strings.json"
             if not component_root.is_dir() or not strings_path.is_file():
                 continue
-
             if domain not in strings_cache:
                 strings_cache[domain] = _load_json_file(strings_path)
             strings = strings_cache[domain]
             translations = _load_json_object(archive.read(info), info.filename)
             if not (filtered := _filter_compatible(translations, strings)):
                 continue
-
             staged_path = staging_root / domain / "translations" / f"{language}.json"
             staged_path.parent.mkdir(parents=True, exist_ok=True)
             staged_path.write_text(
@@ -169,23 +157,18 @@ def import_translations(
             )
             imported.append((domain, language, staged_path))
             languages.add(language)
-
         if not imported:
             raise ValueError(
                 "The wheel contained no compatible non-English translations"
             )
-
-        # Commit only after the complete wheel has passed validation.
         for translations_root in components_root.glob("*/translations"):
             for existing_file in translations_root.glob("*.json"):
                 if existing_file.stem != "en":
                     existing_file.unlink()
-
         for domain, language, staged_path in imported:
             target = components_root / domain / "translations" / f"{language}.json"
             target.parent.mkdir(parents=True, exist_ok=True)
             staged_path.replace(target)
-
     return ImportSummary(
         files=len(imported),
         components=len({domain for domain, _, _ in imported}),
@@ -227,7 +210,6 @@ def _parser() -> argparse.ArgumentParser:
     """Return the command-line parser."""
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-
     import_parser = subparsers.add_parser("import")
     import_parser.add_argument("--wheel", type=Path, required=True)
     import_parser.add_argument("--expected-sha256", required=True)
@@ -235,7 +217,6 @@ def _parser() -> argparse.ArgumentParser:
         "--components-root", type=Path, default=DEFAULT_COMPONENTS_ROOT
     )
     import_parser.add_argument("--require-language", action="append", default=[])
-
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument(
         "--components-root", type=Path, default=DEFAULT_COMPONENTS_ROOT
@@ -253,7 +234,6 @@ def main() -> int:
             f"Verified onboarding translations for {', '.join(sorted(args.language))}"
         )
         return 0
-
     summary = import_translations(
         args.wheel, args.expected_sha256, args.components_root
     )

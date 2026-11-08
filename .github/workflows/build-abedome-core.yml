@@ -11,22 +11,28 @@ on:
       - ".github/workflows/build-abedome-core.yml"
       - ".github/workflows/publish-abedome-core.yml"
       - "Dockerfile"
-      - "homeassistant/const.py"
       - "homeassistant/brand.py"
-      - "homeassistant/__main__.py"
+      - "homeassistant/components/analytics/**"
+      - "homeassistant/components/backup/**"
+      - "homeassistant/components/cloud/**"
       - "homeassistant/components/frontend/**"
+      - "homeassistant/components/hassio/**"
+      - "homeassistant/components/labs/**"
       - "homeassistant/components/onboarding/**"
+      - "homeassistant/generated/labs.py"
       - "homeassistant/package_constraints.txt"
       - "requirements.txt"
       - "requirements_all.txt"
-      - "script/abedome/check_ghcr_tag.py"
-      - "script/abedome/import_backend_translations.py"
+      - "script/abedome/**"
       - "script/hassfest/mdi_icons.py"
-      - "tests/scripts/abedome/test_check_ghcr_tag.py"
-      - "tests/scripts/abedome/test_import_backend_translations.py"
-      - "tests/scripts/abedome/test_publish_contract.py"
+      - "tests/scripts/abedome/**"
       - "tests/test_brand.py"
+      - "tests/components/analytics/**"
+      - "tests/components/backup/**"
+      - "tests/components/cloud/**"
       - "tests/components/frontend/**"
+      - "tests/components/hassio/**"
+      - "tests/components/labs/**"
       - "tests/components/onboarding/**"
       - "pyproject.toml"
       - ".python-version"
@@ -38,33 +44,72 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  CORE_VERSION: "2026.11.0"
+  FRONTEND_VERSION: "20261028.4"
+  FRONTEND_URL: >-
+    https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-20261028.4/abedome_frontend-20261028.4-py3-none-any.whl
+  FRONTEND_SHA256: ${{ vars.ABEDOME_FRONTEND_20261028_4_SHA256 }}
+  UPSTREAM_TRANSLATIONS_SHA256: 7ca5fbde9dea879ac7723949fc84347aac5182e6309c357b2e4973fd391b00f7
+  UPSTREAM_TRANSLATIONS_URL: >-
+    https://files.pythonhosted.org/packages/28/0a/10c900142dfff3c8bda64e75d0077519c4ee9a3e0f18aabc67c023ac079f/homeassistant-2026.11.0-py3-none-any.whl
+
 jobs:
   build:
-    name: Package and verify the ABEDOME core
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    name: Package and verify ABEDOME Core
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
     steps:
       - name: Check out ABEDOME Core
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set up the supported Python version
+      - name: Set up Python 3.14.10
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: ".python-version"
           check-latest: true
 
+      - name: Require the released Frontend digest
+        shell: bash
+        run: |
+          if [[ ! "$FRONTEND_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Set repository variable ABEDOME_FRONTEND_20261028_4_SHA256 to the released Frontend wheel SHA-256"
+            exit 1
+          fi
+
       - name: Install build and test tools
-        run: python -m pip install --upgrade pip build pytest orjson==3.11.9
+        run: |
+          python -m pip install --upgrade pip build orjson==3.13.0
+          python -m pip install \
+            --editable . \
+            --editable packages/pytest-homeassistant
+
+      - name: Validate the pinned Frontend dependency
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+
+          project = tomllib.loads(Path("pyproject.toml").read_text())
+          dependency = next(
+              requirement
+              for requirement in project["project"]["dependencies"]
+              if requirement.startswith("abedome-frontend @ ")
+          )
+          expected = (
+              f"abedome-frontend @ {os.environ['FRONTEND_URL']}"
+              f"#sha256={os.environ['FRONTEND_SHA256']}"
+          )
+          assert dependency == expected
+          PY
 
       - name: Prepare pinned backend translations
-        env:
-          UPSTREAM_TRANSLATIONS_SHA256: 35005ce5491f64e48dfa0ca8436751474b8d8ec346a2406c2e2ba0f40427afcd
-          UPSTREAM_TRANSLATIONS_URL: https://files.pythonhosted.org/packages/f9/77/1fa0722a0b8417069844a067a2d16aeaa28b2894f462b37553e421f29bfd/homeassistant-2026.8.1-py3-none-any.whl
         run: |
           set -euo pipefail
-          translation_wheel="${RUNNER_TEMP}/homeassistant-2026.8.1-py3-none-any.whl"
+          translation_wheel="${RUNNER_TEMP}/homeassistant-${CORE_VERSION}-py3-none-any.whl"
           curl --fail --location --retry 3 \
             --output "$translation_wheel" \
             "$UPSTREAM_TRANSLATIONS_URL"
@@ -84,14 +129,12 @@ jobs:
           tests/scripts/abedome/test_publish_contract.py
 
       - name: Verify the published ABEDOME Frontend
-        env:
-          FRONTEND_SHA256: 886fabc0e7d924ce8a7f46a1dd3d624b707a9a17cd21934dc10736945cebd547
-          FRONTEND_URL: https://github.com/Mauro2020/abedome-frontend/releases/download/abedome-frontend-2026.8.5.dev7/abedome_frontend-2026.8.5.dev7-py3-none-any.whl
-          FRONTEND_VERSION: 2026.8.5.dev7
         run: |
-          curl --fail --location --retry 3 --output /tmp/abedome_frontend-2026.8.5.dev7-py3-none-any.whl "$FRONTEND_URL"
-          echo "$FRONTEND_SHA256  /tmp/abedome_frontend-2026.8.5.dev7-py3-none-any.whl" | sha256sum --check
-          python -m pip install --no-deps /tmp/abedome_frontend-2026.8.5.dev7-py3-none-any.whl
+          set -euo pipefail
+          frontend_wheel="${RUNNER_TEMP}/abedome_frontend-${FRONTEND_VERSION}-py3-none-any.whl"
+          curl --fail --location --retry 3 --output "$frontend_wheel" "$FRONTEND_URL"
+          echo "$FRONTEND_SHA256  $frontend_wheel" | sha256sum --check
+          python -m pip install --no-deps "$frontend_wheel"
           python - <<'PY'
           import os
           from importlib.metadata import version
@@ -102,7 +145,7 @@ jobs:
           assert version("abedome-frontend") == os.environ["FRONTEND_VERSION"]
           PY
 
-      - name: Compile the core source
+      - name: Compile the Core source
         run: python -m compileall -q homeassistant
 
       - name: Verify ABEDOME distribution identity
@@ -153,7 +196,7 @@ jobs:
           PY
 
       - name: Retain the Core distribution
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: abedome-core-distribution
           path: dist/
