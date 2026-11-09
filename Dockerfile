@@ -58,7 +58,8 @@ RUN \
 ## Setup Home Assistant Core
 COPY --parents \
     LICENSE* README* homeassistant/ pyproject.toml \
-    script/__init__.py script/abedome/ script/translations/ \
+    script/__init__.py script/abedome/ script/hassfest/translation_data.py \
+    script/translations/ \
     homeassistant/
 WORKDIR /usr/src/homeassistant
 RUN \

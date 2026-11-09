@@ -184,6 +184,7 @@ def test_publisher_packages_verified_backend_translations() -> None:
     assert translation_import < image_build < image_check
     assert "python3 -m script.translations develop --all" in dockerfile
     assert "script/abedome/" in dockerfile
+    assert "script/hassfest/translation_data.py" in dockerfile
     docker_generation = dockerfile.index("python3 -m script.translations develop --all")
     docker_verification = dockerfile.index("verify --language en --language it")
     docker_install = dockerfile.index("uv pip install", docker_generation)
